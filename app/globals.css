@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --background: #1F1E1D;
+  --surface: #2A2927;
+  --surface-hover: #33322F;
+  --surface-active: #3C3A37;
+  --border: #3A3835;
+  --border-light: #484542;
+  --text: #FAF9F5;
+  --muted: #A8A59E;
+  --accent: #D97757;
+  --accent-hover: #C5684A;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+}
+
+html,
+body {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  background-color: var(--background);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace font stack for terminal and code */
+.font-mono,
+pre,
+code,
+.font-terminal {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+/* Subtle, minimal dark scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3A3835;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #484542;
+}
+
+/* Touch action optimization for mobile */
+button,
+a,
+input,
+textarea {
+  touch-action: manipulation;
+}
+
