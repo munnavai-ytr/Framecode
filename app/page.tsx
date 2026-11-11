@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from '@/components/Sidebar';
 import { ChatArea } from '@/components/ChatArea';
 import { RightPanel } from '@/components/RightPanel';
@@ -8,10 +8,98 @@ import { MobileHeader } from '@/components/MobileHeader';
 import { MobileTerminalSheet } from '@/components/MobileTerminalSheet';
 import { INITIAL_PAST_CHATS } from '@/data/dummyChats';
 import { ChatSession, ChatMessage, TaskRow, TerminalLine, VideoProject } from '@/types/framecode';
+import { compileRemotionCode } from '@/lib/codeCompiler';
+import { checkWebRendererSupport, captureStillsForReview, renderVideoToMp4 } from '@/lib/videoRenderer';
+
+const LOCAL_STORAGE_KEY = 'framecode_chats';
 
 export default function FramecodePage() {
-  const [pastChats, setPastChats] = useState<ChatSession[]>(INITIAL_PAST_CHATS);
-  const [activeChatId, setActiveChatId] = useState<string | null>('chat-1');
+  const [pastChats, setPastChats] = useState<ChatSession[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (stored) {
+          const parsed: ChatSession[] = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not read past chats from localStorage:', e);
+      }
+    }
+    return INITIAL_PAST_CHATS;
+  });
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (stored) {
+          const parsed: ChatSession[] = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed[0].id;
+          }
+        }
+      } catch {}
+    }
+    return 'chat-1';
+  });
+
+  // UI state
+  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [isRenderingMp4, setIsRenderingMp4] = useState<boolean>(false);
+  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
+  const [isTerminalSheetOpenMobile, setIsTerminalSheetOpenMobile] = useState<boolean>(false);
+
+  const isMountedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+  }, []);
+
+
+  // Save past chats (text, code & stock IDs only, no temporary URLs or video blobs) to localStorage
+  useEffect(() => {
+    if (!isMountedRef.current) return;
+    try {
+      const cleanForStorage = pastChats.map((chat) => ({
+        ...chat,
+        messages: chat.messages.map((m) => ({
+          ...m,
+          video: m.video
+            ? {
+                ...m.video,
+                mp4BlobUrl: null, // do not store heavy blob URLs
+                stockAssets: m.video.stockAssets
+                  ? m.video.stockAssets.map((asset) => ({
+                      ...asset,
+                      fileUrl: '', // clear temporary hotlinks
+                      previewUrl: '',
+                    }))
+                  : [],
+              }
+            : null,
+        })),
+        video: chat.video
+          ? {
+              ...chat.video,
+              mp4BlobUrl: null,
+              stockAssets: chat.video.stockAssets
+                ? chat.video.stockAssets.map((asset) => ({
+                    ...asset,
+                    fileUrl: '',
+                    previewUrl: '',
+                  }))
+                : [],
+            }
+          : null,
+      }));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleanForStorage));
+    } catch (e) {
+      console.warn('Could not save chats to localStorage:', e);
+    }
+  }, [pastChats]);
 
   // Active chat session state
   const activeChat = pastChats.find((c) => c.id === activeChatId) || null;
@@ -19,15 +107,90 @@ export default function FramecodePage() {
   const currentTerminalLines = activeChat ? activeChat.terminalLines : [];
   const currentVideo = activeChat ? activeChat.video : null;
 
-  // UI state
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
-  const [isTerminalSheetOpenMobile, setIsTerminalSheetOpenMobile] = useState<boolean>(false);
+  // Helper to add terminal log
+  const appendTerminalLog = (
+    chatId: string,
+    text: string,
+    type: 'command' | 'log' | 'success' | 'highlight' | 'dim' = 'log'
+  ) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const logItem: TerminalLine = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      type,
+      timestamp: timeStr,
+    };
 
-  // Switch chat
-  const handleSelectChat = (chatId: string) => {
+    setPastChats((prev) =>
+      prev.map((c) => {
+        if (c.id === chatId) {
+          return {
+            ...c,
+            terminalLines: [...c.terminalLines, logItem],
+          };
+        }
+        return c;
+      })
+    );
+  };
+
+  // Switch chat and restore live preview with fresh Pixabay URLs
+  const handleSelectChat = async (chatId: string) => {
     if (isStreaming) return;
     setActiveChatId(chatId);
+
+    const targetSession = pastChats.find((c) => c.id === chatId);
+    if (!targetSession || !targetSession.video) return;
+
+    const assetsToRefresh = targetSession.video.stockAssets || [];
+    const needsRefetch = assetsToRefresh.some((a) => !a.fileUrl && a.id);
+
+    if (needsRefetch) {
+      appendTerminalLog(chatId, `$ pixabay restore-urls [${assetsToRefresh.map((a) => a.id).join(', ')}]`, 'command');
+
+      const refreshedAssets = await Promise.all(
+        assetsToRefresh.map(async (asset) => {
+          if (!asset.id) return asset;
+          try {
+            const res = await fetch(`/api/stock?id=${encodeURIComponent(String(asset.id))}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.result?.fileUrl) {
+                return {
+                  ...asset,
+                  fileUrl: data.result.fileUrl,
+                  previewUrl: data.result.previewUrl || asset.previewUrl,
+                };
+              }
+            }
+          } catch (e) {
+            console.warn(`Failed to refresh stock URL for id ${asset.id}:`, e);
+          }
+          return asset;
+        })
+      );
+
+      setPastChats((prev) =>
+        prev.map((c) => {
+          if (c.id === chatId && c.video) {
+            const updatedVideo: VideoProject = {
+              ...c.video,
+              stockAssets: refreshedAssets,
+            };
+            return {
+              ...c,
+              video: updatedVideo,
+              messages: c.messages.map((m) =>
+                m.video ? { ...m, video: { ...m.video, stockAssets: refreshedAssets } } : m
+              ),
+            };
+          }
+          return c;
+        })
+      );
+
+      appendTerminalLog(chatId, '✓ Pixabay asset URLs refreshed for live preview', 'success');
+    }
   };
 
   // Start a new chat
@@ -42,7 +205,7 @@ export default function FramecodePage() {
       terminalLines: [
         {
           id: `init-${Date.now()}`,
-          text: '$ remotion v4.0.120 initialized in sandbox',
+          text: '$ remotion v4.0.542 environment ready',
           type: 'command',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
@@ -54,19 +217,85 @@ export default function FramecodePage() {
     setActiveChatId(newChatId);
   };
 
-  // Send message and simulate the demo flow with timers
-  const handleSendMessage = (text: string) => {
+  // Trigger MP4 rendering on demand if user clicks download before MP4 is generated
+  const handleRenderAndDownload = async () => {
+    if (!currentVideo || !currentVideo.code || isRenderingMp4 || isStreaming) return;
+    const targetChatId = activeChatId;
+    if (!targetChatId) return;
+
+    appendTerminalLog(targetChatId, '$ remotion render-media-on-web Composition out.mp4', 'command');
+    appendTerminalLog(targetChatId, '[hint] Keep this tab open while rendering', 'dim');
+
+    const support = await checkWebRendererSupport();
+    if (!support.supported) {
+      appendTerminalLog(targetChatId, `[error] ${support.message || 'Please use the latest Chrome.'}`, 'highlight');
+      alert(support.message || 'Please use the latest Chrome.');
+      return;
+    }
+
+    setIsRenderingMp4(true);
+    try {
+      const compileRes = compileRemotionCode(currentVideo.code);
+      if (!compileRes.component) {
+        throw new Error(compileRes.error || 'Failed to compile component');
+      }
+
+      const { url } = await renderVideoToMp4(
+        compileRes.component,
+        currentVideo.videoConfig,
+        (progress) => {
+          if (progress % 20 === 0 || progress === 100) {
+            appendTerminalLog(targetChatId, `[render] Encoding progress: ${progress}%`, 'dim');
+          }
+        }
+      );
+
+      appendTerminalLog(targetChatId, '✓ Render completed successfully', 'success');
+
+      // Update state with mp4BlobUrl
+      setPastChats((prev) =>
+        prev.map((c) => {
+          if (c.id === targetChatId && c.video) {
+            return {
+              ...c,
+              video: {
+                ...c.video,
+                mp4BlobUrl: url,
+              },
+            };
+          }
+          return c;
+        })
+      );
+
+      // Trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(currentVideo.title || 'framecode_export').toLowerCase().replace(/\s+/g, '_')}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendTerminalLog(targetChatId, `[error] Render failed: ${msg}`, 'highlight');
+    } finally {
+      setIsRenderingMp4(false);
+    }
+  };
+
+  // Main Real AI Client Flow
+  const handleSendMessage = async (userText: string) => {
     if (isStreaming) return;
 
     let targetChatId = activeChatId;
     let targetChats = [...pastChats];
 
-    // If currently no active chat or empty title, initialize or update title
+    // Ensure active chat session exists
     if (!targetChatId) {
       targetChatId = `chat-${Date.now()}`;
       const newSession: ChatSession = {
         id: targetChatId,
-        title: text.length > 28 ? `${text.slice(0, 28)}...` : text,
+        title: userText.length > 28 ? `${userText.slice(0, 28)}...` : userText,
         timestamp: 'Just now',
         messages: [],
         terminalLines: [],
@@ -75,12 +304,12 @@ export default function FramecodePage() {
       targetChats = [newSession, ...targetChats];
       setActiveChatId(targetChatId);
     } else {
-      // Update chat title if it was default
+      // Update title if it was default
       targetChats = targetChats.map((c) => {
         if (c.id === targetChatId && (c.title === 'New Video Project' || c.messages.length === 0)) {
           return {
             ...c,
-            title: text.length > 28 ? `${text.slice(0, 28)}...` : text,
+            title: userText.length > 28 ? `${userText.slice(0, 28)}...` : userText,
           };
         }
         return c;
@@ -88,278 +317,546 @@ export default function FramecodePage() {
     }
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const userMsgId = `user-${Date.now()}`;
     const userMessage: ChatMessage = {
-      id: userMsgId,
+      id: `user-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: userText,
       timestamp: timeStr,
     };
 
-    // Append user message immediately
     const assistantMsgId = `assistant-${Date.now()}`;
-    let updatedChats = targetChats.map((c) => {
-      if (c.id === targetChatId) {
-        return {
-          ...c,
-          messages: [...c.messages, userMessage],
-        };
-      }
-      return c;
-    });
-    setPastChats(updatedChats);
+    const initialAssistantMessage: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: 'Analyzing concept and planning storyboard...',
+      timestamp: timeStr,
+      tasks: [],
+    };
+
+    const existingChat = targetChats.find((c) => c.id === targetChatId);
+    const previousCode = existingChat?.latestCode || existingChat?.video?.code || '';
+
+    // Append user & initial assistant message
+    setPastChats(
+      targetChats.map((c) => {
+        if (c.id === targetChatId) {
+          return {
+            ...c,
+            messages: [...c.messages, userMessage, initialAssistantMessage],
+          };
+        }
+        return c;
+      })
+    );
+
     setIsStreaming(true);
 
-    // Initial tasks
-    const initialTasks: TaskRow[] = [
-      {
-        id: 't-step-1',
-        label: 'Wrote storyboard - 4 scenes',
-        status: 'running',
-        progress: 45,
+    // Helper to update the active assistant message tasks or content
+    const updateAssistantMsg = (
+      updater: (msg: ChatMessage) => ChatMessage,
+      videoUpdate?: VideoProject | null,
+      codeUpdate?: string
+    ) => {
+      setPastChats((prev) =>
+        prev.map((c) => {
+          if (c.id === targetChatId) {
+            return {
+              ...c,
+              messages: c.messages.map((m) => (m.id === assistantMsgId ? updater(m) : m)),
+              ...(videoUpdate !== undefined ? { video: videoUpdate } : {}),
+              ...(codeUpdate !== undefined ? { latestCode: codeUpdate } : {}),
+            };
+          }
+          return c;
+        })
+      );
+    };
+
+    try {
+      appendTerminalLog(targetChatId, `$ framecode plan --model gemini-2.5-flash`, 'command');
+
+      // -------------------------------------------------------------
+      // 1. CALL /api/ai "plan"
+      // -------------------------------------------------------------
+      const allMessages = [
+        ...(existingChat?.messages || []).map((m) => ({ role: m.role, content: m.content })),
+        { role: 'user', content: userText },
+      ];
+
+      const planRes = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'plan',
+          messages: allMessages,
+        }),
+      });
+
+      const planData = await planRes.json();
+
+      if (!planRes.ok || planData.error) {
+        const errorText = planData.error || 'Failed to plan video.';
+        appendTerminalLog(targetChatId, `[error] ${errorText}`, 'highlight');
+        updateAssistantMsg((m) => ({
+          ...m,
+          content: errorText,
+        }));
+        setIsStreaming(false);
+        return;
+      }
+
+      const { reply, storyboard, videoConfig } = planData;
+      appendTerminalLog(
+        targetChatId,
+        `[planner] Planned ${storyboard.length} scenes (${videoConfig.durationInFrames} frames @ ${videoConfig.fps}fps)`
+      );
+
+      const storyboardTask: TaskRow = {
+        id: 'task-storyboard',
+        label: `Wrote storyboard - ${storyboard.length} scenes`,
+        status: 'done',
         detailTitle: 'storyboard.json',
-        codeSnippet: `{\n  "concept": "${text}",\n  "ratio": "9:16",\n  "fps": 30,\n  "durationInFrames": 900,\n  "scenes": [\n    { "id": "hook", "duration": "6s", "style": "kinetic_text" },\n    { "id": "feature_1", "duration": "8s", "style": "split_preview" },\n    { "id": "feature_2", "duration": "8s", "style": "vector_flow" },\n    { "id": "cta", "duration": "8s", "style": "brand_lockup" }\n  ]\n}`,
-      },
-    ];
-
-    // Timer Step 1: AI starts responding + Task 1 running + terminal output
-    setTimeout(() => {
-      const log1: TerminalLine = {
-        id: `log-${Date.now()}-1`,
-        text: `$ npx remotion init --template vertical-9x16`,
-        type: 'command',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      };
-      const log2: TerminalLine = {
-        id: `log-${Date.now()}-2`,
-        text: `[framecode] Parsed prompt: "${text}"`,
-        type: 'log',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        codeSnippet: JSON.stringify(storyboard, null, 2),
       };
 
-      const assistantMessage: ChatMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: `I've planned a 4-scene 9:16 video composition using Remotion with spring physics and kinetic typography. Writing React code and compiling assets:`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        tasks: initialTasks,
-      };
+      updateAssistantMsg((m) => ({
+        ...m,
+        content: reply,
+        tasks: [storyboardTask],
+      }));
 
-      setPastChats((prev) =>
-        prev.map((c) => {
-          if (c.id === targetChatId) {
-            return {
-              ...c,
-              messages: [...c.messages, assistantMessage],
-              terminalLines: [...c.terminalLines, log1, log2],
-            };
-          }
-          return c;
-        })
+      // -------------------------------------------------------------
+      // 2. STOCK MEDIA QUERIES
+      // -------------------------------------------------------------
+      const stockQueries: string[] = Array.from(
+        new Set(
+          storyboard
+            .map((s: { stockQuery?: string }) => s.stockQuery?.trim())
+            .filter((q: string | undefined): q is string => Boolean(q && q.length > 1))
+        )
       );
-    }, 450);
 
-    // Timer Step 2: Task 1 finishes, Task 2 starts + terminal logs
-    setTimeout(() => {
-      const log3: TerminalLine = {
-        id: `log-${Date.now()}-3`,
-        text: `[remotion] Compiling src/Scene1.tsx & src/Scene2.tsx with esbuild`,
-        type: 'log',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      const collectedStockAssets: Array<{
+        id: string | number;
+        type: 'video' | 'photo';
+        previewUrl: string;
+        fileUrl: string;
+        duration?: number;
+        width: number;
+        height: number;
+      }> = [];
+
+      if (stockQueries.length > 0) {
+        appendTerminalLog(targetChatId, `$ pixabay search [${stockQueries.join(', ')}]`, 'command');
+        for (const query of stockQueries) {
+          try {
+            const stockRes = await fetch(`/api/stock?q=${encodeURIComponent(query)}`);
+            if (stockRes.ok) {
+              const stockData = await stockRes.json();
+              if (Array.isArray(stockData.results)) {
+                collectedStockAssets.push(...stockData.results);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed stock fetch:', e);
+          }
+        }
+
+        const stockTask: TaskRow = {
+          id: 'task-stock',
+          label: `Found ${collectedStockAssets.length} stock clips (Pixabay)`,
+          status: 'done',
+          detailTitle: 'stock-assets.json',
+          codeSnippet: JSON.stringify(collectedStockAssets, null, 2),
+        };
+
+        appendTerminalLog(targetChatId, `[stock] Discovered ${collectedStockAssets.length} stock clips (Pixabay)`);
+        updateAssistantMsg((m) => ({
+          ...m,
+          tasks: [...(m.tasks || []), stockTask],
+        }));
+      }
+
+      // -------------------------------------------------------------
+      // 3. CALL /api/ai "code"
+      // -------------------------------------------------------------
+      appendTerminalLog(targetChatId, `$ framecode generate-code Composition.tsx`, 'command');
+      const codeTask: TaskRow = {
+        id: 'task-code',
+        label: 'Wrote Composition.tsx',
+        status: 'running',
+        progress: 50,
       };
 
-      setPastChats((prev) =>
-        prev.map((c) => {
-          if (c.id === targetChatId) {
-            const updatedMessages = c.messages.map((m) => {
-              if (m.id === assistantMsgId) {
-                const updatedTasks: TaskRow[] = [
-                  {
-                    ...m.tasks![0],
+      updateAssistantMsg((m) => ({
+        ...m,
+        tasks: [...(m.tasks || []), codeTask],
+      }));
+
+      const codeRes = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'code',
+          storyboard,
+          stockAssets: collectedStockAssets,
+          previousCode,
+          userPrompt: userText,
+          videoConfig,
+        }),
+      });
+
+      const codeData = await codeRes.json();
+
+      if (!codeRes.ok || codeData.error) {
+        const errorText = codeData.error || 'Failed to generate code.';
+        appendTerminalLog(targetChatId, `[error] ${errorText}`, 'highlight');
+        updateAssistantMsg((m) => ({
+          ...m,
+          tasks: (m.tasks || []).map((t) => (t.id === 'task-code' ? { ...t, status: 'done', label: 'Code generation failed' } : t)),
+        }));
+        setIsStreaming(false);
+        return;
+      }
+
+      let currentCode: string = codeData.code;
+      appendTerminalLog(targetChatId, `[compiler] Compiling TypeScript JSX with Sucrase...`);
+
+      // -------------------------------------------------------------
+      // 4. BROWSER COMPILE & FIX LOOP (MAX 3 TRIES)
+      // -------------------------------------------------------------
+      let compileTest = compileRemotionCode(currentCode);
+      let fixTries = 0;
+
+      while (!compileTest.component && fixTries < 3) {
+        fixTries++;
+        appendTerminalLog(
+          targetChatId,
+          `[error] Compile error (try ${fixTries}/3): ${compileTest.error}`,
+          'highlight'
+        );
+
+        const fixTask: TaskRow = {
+          id: `task-fix-${fixTries}`,
+          label: `Fixing code error (attempt ${fixTries}/3)...`,
+          status: 'running',
+        };
+
+        updateAssistantMsg((m) => ({
+          ...m,
+          tasks: [...(m.tasks || []), fixTask],
+        }));
+
+        const fixRes = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'fix',
+            code: currentCode,
+            error: compileTest.error,
+            storyboard,
+            videoConfig,
+          }),
+        });
+
+        const fixData = await fixRes.json();
+        if (fixData.code) {
+          currentCode = fixData.code;
+          compileTest = compileRemotionCode(currentCode);
+          appendTerminalLog(
+            targetChatId,
+            `[fix] Applied fix: ${fixData.fixSummary || 'Refactored TSX structure'}`,
+            'dim'
+          );
+
+          updateAssistantMsg((m) => ({
+            ...m,
+            tasks: (m.tasks || []).map((t) =>
+              t.id === `task-fix-${fixTries}`
+                ? {
+                    ...t,
                     status: 'done',
-                    progress: 100,
-                  },
-                  {
-                    id: 't-step-2',
-                    label: 'Wrote Scene1.tsx & Scene2.tsx',
-                    status: 'running',
-                    progress: 60,
-                    detailTitle: 'src/scenes/Scene1.tsx',
-                    codeSnippet: `import { spring, useCurrentFrame, useVideoConfig } from 'remotion';\n\nexport const Scene1 = () => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const scale = spring({ frame, fps, config: { damping: 12 } });\n  return (\n    <div className="flex h-full w-full items-center justify-center p-6 text-center">\n      <h1 style={{ transform: \`scale(\${scale})\` }} className="text-3xl font-bold">\n        ${text.toUpperCase().slice(0, 24)}\n      </h1>\n    </div>\n  );\n};`,
-                  },
-                ];
-                return { ...m, tasks: updatedTasks };
+                    label: `Fixed: ${fixData.fixSummary || 'Resolved syntax error'}`,
+                  }
+                : t
+            ),
+          }));
+        } else {
+          break;
+        }
+      }
+
+      // Mark the original code task as done
+      updateAssistantMsg((m) => ({
+        ...m,
+        tasks: (m.tasks || []).map((t) =>
+          t.id === 'task-code'
+            ? {
+                ...t,
+                status: 'done',
+                detailTitle: 'Composition.tsx',
+                codeSnippet: currentCode,
               }
-              return m;
-            });
+            : t
+        ),
+      }));
 
-            return {
-              ...c,
-              messages: updatedMessages,
-              terminalLines: [...c.terminalLines, log3],
-            };
-          }
-          return c;
-        })
-      );
-    }, 1400);
+      if (!compileTest.component) {
+        appendTerminalLog(
+          targetChatId,
+          `[error] Could not resolve compile error after 3 attempts: ${compileTest.error}`,
+          'highlight'
+        );
+        setIsStreaming(false);
+        return;
+      }
 
-    // Timer Step 3: Task 2 finishes, Task 3 (rendering) starts + terminal logs
-    setTimeout(() => {
-      const log4: TerminalLine = {
-        id: `log-${Date.now()}-4`,
-        text: `$ npx remotion render src/Root.tsx VideoComposition out.mp4`,
-        type: 'command',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      };
-      const log5: TerminalLine = {
-        id: `log-${Date.now()}-5`,
-        text: `[remotion] Rendering 900 frames @ 1080x1920 (30fps)...`,
-        type: 'log',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      };
+      appendTerminalLog(targetChatId, `✓ Sandboxed compilation succeeded`, 'success');
 
-      setPastChats((prev) =>
-        prev.map((c) => {
-          if (c.id === targetChatId) {
-            const updatedMessages = c.messages.map((m) => {
-              if (m.id === assistantMsgId) {
-                const updatedTasks: TaskRow[] = [
-                  m.tasks![0],
-                  {
-                    ...m.tasks![1],
-                    status: 'done',
-                    progress: 100,
-                  },
-                  {
-                    id: 't-step-3',
-                    label: 'Rendering video... 62%',
-                    status: 'running',
-                    progress: 62,
-                    detailTitle: 'render.log',
-                    codeSnippet: `[remotion] Frame 0 to 558 rendered in 1.8s\n[remotion] Bitrate: 18 Mbps\n[remotion] Resolution: 1080x1920 (9:16)`,
-                  },
-                ];
-                return { ...m, tasks: updatedTasks };
-              }
-              return m;
-            });
-
-            return {
-              ...c,
-              messages: updatedMessages,
-              terminalLines: [...c.terminalLines, log4, log5],
-            };
-          }
-          return c;
-        })
-      );
-    }, 2400);
-
-    // Timer Step 4: Progress updates to 90%
-    setTimeout(() => {
-      const log6: TerminalLine = {
-        id: `log-${Date.now()}-6`,
-        text: `[remotion] Frame 558 to 900 rendered in 1.1s. Mixing audio.`,
-        type: 'dim',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      // -------------------------------------------------------------
+      // 5. RENDER 3 STILLS & REVIEW (MAX 2 TRIES)
+      // -------------------------------------------------------------
+      appendTerminalLog(targetChatId, `$ remotion render-still-on-web (frames 10%, 50%, 90%)`, 'command');
+      const reviewTask: TaskRow = {
+        id: 'task-review',
+        label: 'Checking frames',
+        status: 'running',
       };
 
-      setPastChats((prev) =>
-        prev.map((c) => {
-          if (c.id === targetChatId) {
-            const updatedMessages = c.messages.map((m) => {
-              if (m.id === assistantMsgId) {
-                const updatedTasks: TaskRow[] = [
-                  m.tasks![0],
-                  m.tasks![1],
-                  {
-                    ...m.tasks![2],
-                    label: 'Rendering video... 92%',
-                    progress: 92,
-                  },
-                ];
-                return { ...m, tasks: updatedTasks };
+      updateAssistantMsg((m) => ({
+        ...m,
+        tasks: [...(m.tasks || []), reviewTask],
+      }));
+
+      try {
+        const stillsBase64 = await captureStillsForReview(compileTest.component, videoConfig);
+        if (stillsBase64.length > 0) {
+          appendTerminalLog(targetChatId, `[review] Captured ${stillsBase64.length} still frames for vision review`);
+
+          const reviewRes = await fetch('/api/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'review',
+              code: currentCode,
+              images: stillsBase64,
+            }),
+          });
+
+          const reviewData = await reviewRes.json();
+          appendTerminalLog(
+            targetChatId,
+            `[review] Inspection result: ${reviewData.ok ? 'Verified (No visual clipping)' : `${reviewData.issues?.length || 0} visual issues found`}`
+          );
+
+          if (!reviewData.ok && Array.isArray(reviewData.issues) && reviewData.issues.length > 0) {
+            let reviewFixTries = 0;
+            while (reviewFixTries < 2) {
+              reviewFixTries++;
+              const issueDesc = reviewData.issues[0];
+              appendTerminalLog(targetChatId, `[fix] Correcting frame issue: ${issueDesc}`, 'dim');
+
+              const fixReviewRes = await fetch('/api/ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  mode: 'fix',
+                  code: currentCode,
+                  issues: reviewData.issues,
+                  storyboard,
+                  videoConfig,
+                }),
+              });
+
+              const fixReviewData = await fixReviewRes.json();
+              if (fixReviewData.code) {
+                const recompiled = compileRemotionCode(fixReviewData.code);
+                if (recompiled.component) {
+                  currentCode = fixReviewData.code;
+                  compileTest = recompiled;
+                  appendTerminalLog(
+                    targetChatId,
+                    `✓ Fixed visual issue: ${fixReviewData.fixSummary || issueDesc}`,
+                    'success'
+                  );
+
+                  updateAssistantMsg((m) => ({
+                    ...m,
+                    tasks: (m.tasks || []).map((t) =>
+                      t.id === 'task-review'
+                        ? {
+                            ...t,
+                            label: `Fixed: ${fixReviewData.fixSummary || issueDesc}`,
+                          }
+                        : t
+                    ),
+                  }));
+                  break;
+                }
               }
-              return m;
-            });
-
-            return {
-              ...c,
-              messages: updatedMessages,
-              terminalLines: [...c.terminalLines, log6],
-            };
+            }
           }
-          return c;
-        })
-      );
-    }, 3300);
+        }
+      } catch (err) {
+        console.warn('Frame review error:', err);
+      }
 
-    // Timer Step 5: Video complete! Rendered video card appears and updates player
-    setTimeout(() => {
-      const newVideo: VideoProject = {
+      // Mark review task as done
+      updateAssistantMsg((m) => ({
+        ...m,
+        tasks: (m.tasks || []).map((t) =>
+          t.id === 'task-review'
+            ? {
+                ...t,
+                status: 'done',
+                label: t.label === 'Checking frames' ? 'Frames verified' : t.label,
+              }
+            : t
+        ),
+      }));
+
+      // -------------------------------------------------------------
+      // 6. SHOW LIVE IN @REMOTION/PLAYER & RENDER MP4
+      // -------------------------------------------------------------
+      const scenesList = storyboard.map((s: { sceneIndex: number; title?: string; onScreenText: string; durationInFrames: number; motionIdea: string }) => ({
+        id: `sc-${s.sceneIndex}`,
+        title: s.title || `0${s.sceneIndex}. Scene`,
+        duration: `${Math.round(s.durationInFrames / videoConfig.fps)}s`,
+        visualStyle: s.onScreenText || 'Kinetic text',
+        codeSummary: s.motionIdea || 'Remotion sequence',
+      }));
+
+      const newVideoObj: VideoProject = {
         id: `vid-${Date.now()}`,
-        title: text.length > 24 ? text.slice(0, 24) : text,
+        title: userText.length > 24 ? userText.slice(0, 24) : userText,
         aspectRatio: '9:16',
-        durationSec: 30,
+        durationSec: Math.round(videoConfig.durationInFrames / videoConfig.fps),
         currentSec: 0,
-        fps: 30,
-        resolution: '1080x1920',
-        scenes: [
-          { id: 'sc-n-1', title: '01. Hook & Title', duration: '0:06', visualStyle: 'Kinetic Spring', codeSummary: 'Scale spring damping 12' },
-          { id: 'sc-n-2', title: '02. Feature Showcase', duration: '0:08', visualStyle: 'Split Code Diff', codeSummary: 'SVG morphing transition' },
-          { id: 'sc-n-3', title: '03. Motion Graphics', duration: '0:08', visualStyle: 'Macro Focus', codeSummary: 'Interpolated blur + rot' },
-          { id: 'sc-n-4', title: '04. Minimalist Outro', duration: '0:08', visualStyle: 'Clean Callout', codeSummary: 'Staggered font reveal' },
-        ],
-        primaryCodeSnippet: `<Composition\n  id="DynamicReel"\n  component={DynamicReelComponent}\n  durationInFrames={900}\n  fps={30}\n  width={1080}\n  height={1920}\n/>`,
+        fps: videoConfig.fps,
+        resolution: `${videoConfig.width}x${videoConfig.height}`,
+        code: currentCode,
+        videoConfig,
+        storyboard,
+        stockAssets: collectedStockAssets,
+        scenes: scenesList,
+        primaryCodeSnippet: currentCode,
+        mp4BlobUrl: null,
       };
 
-      const log7: TerminalLine = {
-        id: `log-${Date.now()}-7`,
-        text: `✓ Successfully rendered video to ./out/render.mp4 (1080x1920, 12.8 MB)`,
-        type: 'success',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      };
+      appendTerminalLog(targetChatId, `✓ Composition mounted live in @remotion/player`, 'success');
 
-      setPastChats((prev) =>
-        prev.map((c) => {
-          if (c.id === targetChatId) {
-            const updatedMessages = c.messages.map((m) => {
-              if (m.id === assistantMsgId) {
-                const finalTasks: TaskRow[] = [
-                  m.tasks![0],
-                  m.tasks![1],
-                  {
-                    ...m.tasks![2],
-                    label: 'Rendering video... 100%',
-                    status: 'done',
-                    progress: 100,
-                  },
-                ];
-
-                return {
-                  ...m,
-                  content: `Your video has been generated and rendered to out.mp4. You can preview the 9:16 composition in the player, inspect the code scenes, or download the export:`,
-                  tasks: finalTasks,
-                  video: newVideo,
-                };
-              }
-              return m;
-            });
-
-            return {
-              ...c,
-              messages: updatedMessages,
-              terminalLines: [...c.terminalLines, log7],
-              video: newVideo,
-            };
-          }
-          return c;
-        })
+      // Update state with live composition immediately
+      updateAssistantMsg(
+        (m) => ({
+          ...m,
+          video: newVideoObj,
+        }),
+        newVideoObj,
+        currentCode
       );
 
+      // Check WebCodecs / Browser WebRenderer capability
+      const support = await checkWebRendererSupport();
+      if (!support.supported) {
+        appendTerminalLog(
+          targetChatId,
+          `[web-renderer] ${support.message || 'Please use the latest Chrome.'}`,
+          'highlight'
+        );
+
+        const skipRenderTask: TaskRow = {
+          id: 'task-render-unsupported',
+          label: support.message || 'Please use the latest Chrome.',
+          status: 'done',
+        };
+
+        updateAssistantMsg((m) => ({
+          ...m,
+          tasks: [...(m.tasks || []), skipRenderTask],
+        }));
+        setIsStreaming(false);
+        return;
+      }
+
+      // Render MP4 in browser
+      appendTerminalLog(targetChatId, `$ remotion render-media-on-web Composition out.mp4`, 'command');
+      appendTerminalLog(targetChatId, `[hint] Keep this tab open while rendering`, 'dim');
+
+      const renderTask: TaskRow = {
+        id: 'task-render-mp4',
+        label: 'Rendering video... 0%',
+        status: 'running',
+        progress: 0,
+        detailTitle: 'render.log',
+      };
+
+      updateAssistantMsg((m) => ({
+        ...m,
+        tasks: [...(m.tasks || []), renderTask],
+      }));
+
+      setIsRenderingMp4(true);
+
+      if (!compileTest.component) {
+        throw new Error('Component is not compiled');
+      }
+
+      const { url } = await renderVideoToMp4(
+        compileTest.component,
+        videoConfig,
+        (progressPercent) => {
+          updateAssistantMsg((m) => ({
+            ...m,
+            tasks: (m.tasks || []).map((t) =>
+              t.id === 'task-render-mp4'
+                ? {
+                    ...t,
+                    label: `Rendering video... ${progressPercent}%`,
+                    progress: progressPercent,
+                  }
+                : t
+            ),
+          }));
+
+          if (progressPercent % 25 === 0) {
+            appendTerminalLog(targetChatId, `[remotion] Render progress: ${progressPercent}%`, 'dim');
+          }
+        }
+      );
+
+      appendTerminalLog(targetChatId, `✓ Successfully rendered MP4 to browser memory`, 'success');
+
+      const finalizedVideo: VideoProject = {
+        ...newVideoObj,
+        mp4BlobUrl: url,
+      };
+
+      updateAssistantMsg(
+        (m) => ({
+          ...m,
+          tasks: (m.tasks || []).map((t) =>
+            t.id === 'task-render-mp4'
+              ? {
+                  ...t,
+                  label: 'Rendering video... 100%',
+                  status: 'done',
+                  progress: 100,
+                  codeSnippet: `[remotion] Rendered ${videoConfig.durationInFrames} frames in browser.\n[remotion] Output format: H.264 MP4 (${videoConfig.width}x${videoConfig.height})`,
+                }
+              : t
+          ),
+          video: finalizedVideo,
+        }),
+        finalizedVideo,
+        currentCode
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendTerminalLog(targetChatId, `[fatal] Execution stopped: ${msg}`, 'highlight');
+    } finally {
+      setIsRenderingMp4(false);
       setIsStreaming(false);
-    }, 4200);
+    }
   };
 
   return (
@@ -368,7 +865,7 @@ export default function FramecodePage() {
       <MobileHeader
         onOpenSidebar={() => setIsSidebarOpenMobile(true)}
         onOpenTerminal={() => setIsTerminalSheetOpenMobile(true)}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming || isRenderingMp4}
       />
 
       {/* Main 3-Zone Desktop Layout / 1-Column Mobile Layout */}
@@ -389,7 +886,9 @@ export default function FramecodePage() {
             messages={currentMessages}
             currentVideo={currentVideo}
             onSendMessage={handleSendMessage}
-            isStreaming={isStreaming}
+            isStreaming={isStreaming || isRenderingMp4}
+            onRenderAndDownload={handleRenderAndDownload}
+            isRenderingMp4={isRenderingMp4}
           />
         </main>
 
@@ -397,7 +896,9 @@ export default function FramecodePage() {
         <RightPanel
           video={currentVideo}
           terminalLines={currentTerminalLines}
-          isStreaming={isStreaming}
+          isStreaming={isStreaming || isRenderingMp4}
+          onRenderAndDownload={handleRenderAndDownload}
+          isRenderingMp4={isRenderingMp4}
         />
       </div>
 
@@ -406,7 +907,7 @@ export default function FramecodePage() {
         isOpen={isTerminalSheetOpenMobile}
         onClose={() => setIsTerminalSheetOpenMobile(false)}
         lines={currentTerminalLines}
-        isStreaming={isStreaming}
+        isStreaming={isStreaming || isRenderingMp4}
       />
     </div>
   );

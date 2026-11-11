@@ -1,73 +1,157 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, Download, RotateCcw, Check, Film } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Play, Pause, Download, RotateCcw, Check, Film, Loader2 } from 'lucide-react';
+import { Player, PlayerRef } from '@remotion/player';
 import { VideoProject } from '@/types/framecode';
+import { compileRemotionCode } from '@/lib/codeCompiler';
 
 interface VideoPlayerProps {
   video: VideoProject | null;
   compact?: boolean;
+  onRenderAndDownload?: () => void;
+  isRenderingMp4?: boolean;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({
+  video,
+  compact = false,
+  onRenderAndDownload,
+  isRenderingMp4 = false,
+}) => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<number>(video?.currentSec ?? 12);
+  const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [downloadSuccess, setDownloadSuccess] = useState<boolean>(false);
 
-  const duration = video?.durationSec ?? 30;
+  const playerRef = useRef<PlayerRef>(null);
+  const videoElemRef = useRef<HTMLVideoElement>(null);
+
+  const durationSec = video?.durationSec || Math.round((video?.videoConfig?.durationInFrames || 450) / (video?.videoConfig?.fps || 30));
+  const fps = video?.videoConfig?.fps || 30;
+  const durationInFrames = video?.videoConfig?.durationInFrames || durationSec * fps;
+
+  const videoCode = video?.code;
+  // Compile TSX code in browser sandbox
+  const { component: CompiledComponent, error: compileError } = useMemo(() => {
+    if (!videoCode) return { component: null, error: null };
+    return compileRemotionCode(videoCode);
+  }, [videoCode]);
 
 
-
-  // Playback timer simulation
+  // Track player frame updates
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isPlaying) {
-      timer = setInterval(() => {
-        setCurrentTime((prev) => {
-          if (prev >= duration) {
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [isPlaying, duration]);
+    const currentElem = playerRef.current;
+    if (!currentElem) return;
+
+    const onFrameUpdate = (e: { detail: { frame: number } }) => {
+      const frame = e.detail?.frame ?? 0;
+      setCurrentTimeSec(Math.round(frame / fps));
+    };
+
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+
+    currentElem.addEventListener('frameupdate', onFrameUpdate);
+    currentElem.addEventListener('play', onPlay);
+    currentElem.addEventListener('pause', onPause);
+
+    return () => {
+      currentElem.removeEventListener('frameupdate', onFrameUpdate);
+      currentElem.removeEventListener('play', onPlay);
+      currentElem.removeEventListener('pause', onPause);
+    };
+  }, [CompiledComponent, fps]);
+
+  // Track MP4 video element updates if using rendered video
+  useEffect(() => {
+    const v = videoElemRef.current;
+    if (!v) return;
+
+    const onTimeUpdate = () => {
+      setCurrentTimeSec(Math.round(v.currentTime));
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+
+    v.addEventListener('timeupdate', onTimeUpdate);
+    v.addEventListener('play', onPlay);
+    v.addEventListener('pause', onPause);
+
+    return () => {
+      v.removeEventListener('timeupdate', onTimeUpdate);
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+    };
+  }, [video?.mp4BlobUrl]);
 
   const togglePlay = () => {
-    setIsPlaying((prev) => !prev);
+    if (video?.mp4BlobUrl && videoElemRef.current) {
+      if (videoElemRef.current.paused) {
+        videoElemRef.current.play();
+      } else {
+        videoElemRef.current.pause();
+      }
+      return;
+    }
+
+    if (playerRef.current) {
+      if (playerRef.current.isPlaying()) {
+        playerRef.current.pause();
+      } else {
+        playerRef.current.play();
+      }
+    } else {
+      setIsPlaying((prev) => !prev);
+    }
   };
 
   const handleReset = () => {
-    setCurrentTime(0);
-    setIsPlaying(false);
+    if (video?.mp4BlobUrl && videoElemRef.current) {
+      videoElemRef.current.currentTime = 0;
+      videoElemRef.current.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    if (playerRef.current) {
+      playerRef.current.seekTo(0);
+      playerRef.current.pause();
+      setIsPlaying(false);
+    }
+    setCurrentTimeSec(0);
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    setCurrentTime(Math.floor(percentage * duration));
+    const targetSec = Math.floor(percentage * durationSec);
+    setCurrentTimeSec(targetSec);
+
+    if (video?.mp4BlobUrl && videoElemRef.current) {
+      videoElemRef.current.currentTime = targetSec;
+    } else if (playerRef.current) {
+      playerRef.current.seekTo(Math.floor(percentage * durationInFrames));
+    }
   };
 
   const handleDownload = () => {
-    setDownloadSuccess(true);
-    // Create an exported sample dummy file
-    const content = `// Framecode Video Export\n// Title: ${video?.title || 'Rendered Video'}\n// Aspect Ratio: 9:16 (1080x1920)\n// Duration: ${duration}s @ 30fps\n\n${video?.primaryCodeSnippet || '// Video rendered with Remotion'}`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(video?.title || 'framecode_export').toLowerCase().replace(/\s+/g, '_')}.mp4.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (video?.mp4BlobUrl) {
+      setDownloadSuccess(true);
+      const a = document.createElement('a');
+      a.href = video.mp4BlobUrl;
+      const safeTitle = (video.title || 'framecode_render').toLowerCase().replace(/\s+/g, '_');
+      a.download = `${safeTitle}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
 
-    setTimeout(() => {
-      setDownloadSuccess(false);
-    }, 2400);
+      setTimeout(() => {
+        setDownloadSuccess(false);
+      }, 2500);
+    } else if (onRenderAndDownload) {
+      onRenderAndDownload();
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -76,16 +160,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  // Active scene index
-  const activeSceneIndex = video?.scenes?.length
-    ? Math.min(
-        Math.floor((currentTime / duration) * video.scenes.length),
-        video.scenes.length - 1
-      )
-    : 0;
-  const activeScene = video?.scenes?.[activeSceneIndex];
+  const progressPercent = durationSec > 0 ? (currentTimeSec / durationSec) * 100 : 0;
 
   if (!video) {
     return (
@@ -100,7 +175,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
   }
 
   return (
-    <div className={`flex flex-col rounded-[12px] border border-[#3A3835] bg-[#2A2927] overflow-hidden ${compact ? 'w-full max-w-[340px] mx-auto' : 'w-full'}`}>
+    <div
+      className={`flex flex-col rounded-[12px] border border-[#3A3835] bg-[#2A2927] overflow-hidden ${
+        compact ? 'w-full max-w-[340px] mx-auto' : 'w-full'
+      }`}
+    >
       {/* Top Header */}
       <div className="flex items-center justify-between border-b border-[#3A3835] px-3.5 py-2.5 bg-[#2A2927]">
         <div className="flex items-center gap-2 truncate">
@@ -112,65 +191,71 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
             {video.title}
           </span>
         </div>
-        <span className="font-mono text-[10px] text-[#A8A59E]">
-          {video.resolution}
-        </span>
+        <div className="flex items-center gap-2">
+          {video.mp4BlobUrl && (
+            <span className="font-mono text-[10px] text-[#FAF9F5] bg-[#1F1E1D] border border-[#3A3835] px-1.5 py-0.5 rounded">
+              MP4 Ready
+            </span>
+          )}
+          <span className="font-mono text-[10px] text-[#A8A59E]">
+            {video.resolution || `${video.videoConfig?.width || 720}x${video.videoConfig?.height || 1280}`}
+          </span>
+        </div>
       </div>
 
       {/* 9:16 Vertical Preview Container */}
       <div className="relative w-full bg-[#1F1E1D] flex items-center justify-center p-3">
         <div
-          className={`relative mx-auto w-full aspect-[9/16] rounded-[8px] border border-[#3A3835] bg-[#232220] overflow-hidden flex flex-col justify-between p-4 ${
-            compact ? 'max-h-[360px]' : 'max-h-[340px]'
+          className={`relative mx-auto w-full aspect-[9/16] rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] overflow-hidden flex flex-col justify-between ${
+            compact ? 'max-h-[380px]' : 'max-h-[360px]'
           }`}
         >
-          {/* Top Canvas Badges */}
-          <div className="flex items-center justify-between text-[10px] font-mono text-[#A8A59E]">
-            <span className="bg-[#1F1E1D] border border-[#3A3835] px-1.5 py-0.5 rounded">
-              {video.fps} FPS
-            </span>
-            <span className="bg-[#1F1E1D] border border-[#3A3835] px-1.5 py-0.5 rounded">
-              SCENE {activeSceneIndex + 1}/{video.scenes?.length || 4}
-            </span>
-          </div>
-
-          {/* Center Graphic / Scene Visual Simulation */}
-          <div className="flex flex-col items-center justify-center text-center my-auto px-2">
-            <div className="relative mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-[#3A3835] bg-[#1F1E1D]">
-              {isPlaying ? (
-                <div className="h-6 w-6 rounded-full border-2 border-[#D97757] border-t-transparent animate-spin" />
-              ) : (
-                <Film className="h-6 w-6 text-[#A8A59E]" />
+          {/* Render Mode: Real MP4 video playback */}
+          {video.mp4BlobUrl ? (
+            <div className="relative w-full h-full flex items-center justify-center bg-black">
+              <video
+                ref={videoElemRef}
+                src={video.mp4BlobUrl}
+                playsInline
+                loop
+                className="w-full h-full object-contain"
+                onClick={togglePlay}
+              />
+            </div>
+          ) : CompiledComponent ? (
+            /* Render Mode: Live Remotion Player in Browser */
+            <div className="relative w-full h-full bg-[#1F1E1D] overflow-hidden">
+              <Player
+                ref={playerRef}
+                component={CompiledComponent}
+                compositionWidth={video.videoConfig?.width || 720}
+                compositionHeight={video.videoConfig?.height || 1280}
+                durationInFrames={durationInFrames}
+                fps={fps}
+                style={{ width: '100%', height: '100%' }}
+                controls={false}
+                loop
+                autoPlay={false}
+              />
+            </div>
+          ) : (
+            /* Fallback or Compile Error View */
+            <div className="flex flex-col items-center justify-center text-center my-auto p-4">
+              <Film className="h-8 w-8 text-[#A8A59E]/60 mb-2" />
+              <p className="text-xs font-mono text-[#FAF9F5]">Compiling composition...</p>
+              {compileError && (
+                <p className="mt-2 text-[10px] font-mono text-red-400 max-w-[200px] break-all">
+                  {compileError}
+                </p>
               )}
             </div>
+          )}
 
-            <p className="font-mono text-xs uppercase tracking-wider text-[#FAF9F5] font-semibold">
-              {activeScene?.title || video.title}
-            </p>
-            <p className="mt-1 font-mono text-[10px] text-[#A8A59E]">
-              {activeScene?.codeSummary || 'Remotion CSS Spring Physics'}
-            </p>
-
-            {/* Subtle animated bar */}
-            <div className="mt-4 flex items-center gap-1">
-              {[40, 75, 55, 90, 60, 30].map((h, i) => (
-                <div
-                  key={i}
-                  className="w-1 rounded-full bg-[#3A3835] transition-all duration-300"
-                  style={{
-                    height: isPlaying ? `${(h * ((currentTime % 5) + 2)) / 5}px` : `${h / 2}px`,
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Bottom Scene Bar inside Canvas */}
-          <div className="rounded border border-[#3A3835] bg-[#1F1E1D]/90 p-2 text-[10px] font-mono text-[#A8A59E]">
-            <div className="flex justify-between items-center">
-              <span>{activeScene?.visualStyle || 'Kinetic Typography'}</span>
-              <span>{formatTime(currentTime)}</span>
-            </div>
+          {/* Top overlay badge */}
+          <div className="absolute top-2 left-2 z-10 pointer-events-none">
+            <span className="font-mono text-[9px] text-[#A8A59E] bg-[#1F1E1D]/80 backdrop-blur-xs border border-[#3A3835] px-1.5 py-0.5 rounded">
+              {video.mp4BlobUrl ? 'MP4' : 'REMOTION LIVE'}
+            </span>
           </div>
         </div>
       </div>
@@ -183,8 +268,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
           className="group relative h-2 w-full cursor-pointer rounded-full bg-[#1F1E1D] border border-[#3A3835]"
           role="slider"
           aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={currentTime}
+          aria-valuemax={durationSec}
+          aria-valuenow={currentTimeSec}
           tabIndex={0}
         >
           <div
@@ -223,7 +308,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
 
             {/* Time label: 0:12 / 0:30 */}
             <span className="font-mono text-xs tabular-nums text-[#A8A59E] ml-1">
-              {formatTime(currentTime)} / {formatTime(duration)}
+              {formatTime(currentTimeSec)} / {formatTime(durationSec)}
             </span>
           </div>
 
@@ -231,17 +316,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, compact = false
           <button
             type="button"
             onClick={handleDownload}
-            className="flex h-9 items-center gap-1.5 rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] px-3 text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] transition-colors"
+            disabled={isRenderingMp4}
+            className="flex h-9 items-center gap-1.5 rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] px-3 text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] disabled:opacity-50 transition-colors"
           >
-            {downloadSuccess ? (
+            {isRenderingMp4 ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#D97757]" />
+                <span>Rendering...</span>
+              </>
+            ) : downloadSuccess ? (
               <>
                 <Check className="h-3.5 w-3.5 text-[#A8A59E]" />
-                <span>Saved</span>
+                <span>Downloaded</span>
               </>
             ) : (
               <>
                 <Download className="h-3.5 w-3.5 text-[#A8A59E]" />
-                <span>Download</span>
+                <span>{video.mp4BlobUrl ? 'Download MP4' : 'Render MP4'}</span>
               </>
             )}
           </button>

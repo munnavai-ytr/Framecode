@@ -9,18 +9,27 @@ interface RightPanelProps {
   video: VideoProject | null;
   terminalLines: TerminalLine[];
   isStreaming?: boolean;
+  onRenderAndDownload?: () => void;
+  isRenderingMp4?: boolean;
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
   video,
   terminalLines,
   isStreaming = false,
+  onRenderAndDownload,
+  isRenderingMp4 = false,
 }) => {
   return (
     <div className="hidden lg:flex h-full w-[400px] shrink-0 flex-col border-l border-[#3A3835] bg-[#1F1E1D] p-3 gap-3 overflow-hidden select-none">
       {/* Top: Video Player */}
       <div className="shrink-0">
-        <VideoPlayer key={video?.id || 'empty'} video={video} />
+        <VideoPlayer
+          key={video?.id || 'empty'}
+          video={video}
+          onRenderAndDownload={onRenderAndDownload}
+          isRenderingMp4={isRenderingMp4}
+        />
       </div>
 
       {/* Bottom: Read-only Terminal auto-scrolling */}

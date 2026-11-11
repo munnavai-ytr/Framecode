@@ -1,3 +1,4 @@
+
 export interface TaskRow {
   id: string;
   label: string;
@@ -7,6 +8,15 @@ export interface TaskRow {
   codeSnippet?: string;
 }
 
+export interface StoryboardScene {
+  sceneIndex: number;
+  title?: string;
+  durationInFrames: number;
+  onScreenText: string;
+  motionIdea: string;
+  stockQuery?: string;
+}
+
 export interface VideoProject {
   id: string;
   title: string;
@@ -14,8 +24,26 @@ export interface VideoProject {
   durationSec: number;
   currentSec: number;
   fps: number;
-  resolution: string; // e.g. "1080x1920"
-  scenes: {
+  resolution: string; // e.g. "720x1280"
+  code: string;
+  videoConfig: {
+    width: number;
+    height: number;
+    fps: number;
+    durationInFrames: number;
+  };
+  storyboard?: StoryboardScene[];
+  stockAssets?: Array<{
+    id: string | number;
+    type: 'video' | 'photo';
+    previewUrl: string;
+    fileUrl: string;
+    duration?: number;
+    width: number;
+    height: number;
+  }>;
+  mp4BlobUrl?: string | null;
+  scenes?: {
     id: string;
     title: string;
     duration: string;
@@ -49,4 +77,6 @@ export interface ChatSession {
   messages: ChatMessage[];
   terminalLines: TerminalLine[];
   video: VideoProject | null;
+  latestCode?: string;
 }
+

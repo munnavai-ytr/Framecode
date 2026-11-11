@@ -12,6 +12,8 @@ interface ChatAreaProps {
   currentVideo: VideoProject | null;
   onSendMessage: (text: string) => void;
   isStreaming: boolean;
+  onRenderAndDownload?: () => void;
+  isRenderingMp4?: boolean;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -19,6 +21,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   currentVideo,
   onSendMessage,
   isStreaming,
+  onRenderAndDownload,
+  isRenderingMp4 = false,
 }) => {
   const [inputText, setInputText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -134,7 +138,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         {/* Inline Video Player on Tablet & Mobile (below 1024px) */}
                         {msg.video && (
                           <div className="mt-4 block lg:hidden w-full">
-                            <VideoPlayer key={msg.video.id} video={msg.video} compact />
+                            <VideoPlayer
+                              key={msg.video.id}
+                              video={msg.video}
+                              compact
+                              onRenderAndDownload={onRenderAndDownload}
+                              isRenderingMp4={isRenderingMp4}
+                            />
                           </div>
                         )}
                       </div>

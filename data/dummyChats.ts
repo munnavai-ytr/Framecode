@@ -1,182 +1,262 @@
-import { ChatSession, VideoProject, TerminalLine } from '@/types/framecode';
+import { ChatSession, VideoProject } from '@/types/framecode';
+
+const SAMPLE_CODE_1 = `import { useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, Sequence } from 'remotion';
+
+export const Composition = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const titleScale = spring({ frame, fps, config: { damping: 14 } });
+  const opacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' });
+  const subY = spring({ frame: frame - 15, fps, from: 30, to: 0, config: { damping: 12 } });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1F1E1D', color: '#FAF9F5', fontFamily: 'system-ui, sans-serif' }}>
+      <Sequence from={0} durationInFrames={240}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 40px', textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: '#A8A59E', letterSpacing: 4, textTransform: 'uppercase', marginBottom: 16 }}>Ceramic Precision</div>
+          <h1 style={{ fontSize: 52, fontWeight: 800, transform: \`scale(\${titleScale})\`, opacity, margin: 0, letterSpacing: -1, lineHeight: 1.1 }}>KRONOS</h1>
+          <div style={{ transform: \`translateY(\${subY}px)\`, marginTop: 24, padding: '8px 16px', borderRadius: 8, backgroundColor: '#2A2927', border: '1px solid #3A3835', fontSize: 14, color: '#D97757', fontWeight: 600 }}>TITANIUM BURR 48MM</div>
+        </div>
+      </Sequence>
+      <Sequence from={240} durationInFrames={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 40px', textAlign: 'center' }}>
+          <div style={{ fontSize: 38, fontWeight: 700, margin: '0 0 16px 0', color: '#FAF9F5' }}>Micron Calibration</div>
+          <p style={{ fontSize: 18, color: '#A8A59E', margin: 0, lineHeight: 1.4 }}>Zero retention. Stepless click dial for precision espresso extraction.</p>
+          <div style={{ marginTop: 40, width: 80, height: 3, backgroundColor: '#D97757', borderRadius: 2 }} />
+        </div>
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+`;
+
+const SAMPLE_CODE_2 = `import { useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, Sequence } from 'remotion';
+
+export const Composition = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const slideY = spring({ frame, fps, from: 40, to: 0 });
+  const opacity = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: 'clamp' });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1F1E1D', color: '#FAF9F5', fontFamily: 'system-ui, sans-serif' }}>
+      <Sequence from={0} durationInFrames={300}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%', padding: '0 48px' }}>
+          <div style={{ fontSize: 14, color: '#D97757', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>Zero Downtime</div>
+          <h1 style={{ fontSize: 42, fontWeight: 700, margin: '0 0 24px 0', opacity, transform: \`translateY(\${slideY}px)\` }}>Instant Schema Diff</h1>
+          <div style={{ fontFamily: 'monospace', backgroundColor: '#2A2927', border: '1px solid #3A3835', padding: 20, borderRadius: 12, fontSize: 15, lineHeight: 1.6 }}>
+            <div style={{ color: '#A8A59E' }}>-- Safe forward migration</div>
+            <div style={{ color: '#4ADE80' }}>+ ALTER TABLE users ADD tier text;</div>
+          </div>
+        </div>
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+`;
+
+const SAMPLE_CODE_3 = `import { useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, Sequence } from 'remotion';
+
+export const Composition = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const rot = interpolate(frame, [0, 300], [0, 10]);
+  const s = spring({ frame, fps, config: { damping: 10 } });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1F1E1D', color: '#FAF9F5', fontFamily: 'serif' }}>
+      <Sequence from={0} durationInFrames={450}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 40px', textAlign: 'center' }}>
+          <span style={{ fontSize: 18, color: '#A8A59E', letterSpacing: 6, textTransform: 'uppercase', marginBottom: 20, fontFamily: 'system-ui' }}>Volume IV</span>
+          <h1 style={{ fontSize: 56, fontWeight: 400, transform: \`scale(\${s}) rotate(\${rot}deg)\`, margin: 0, fontStyle: 'italic' }}>Form & Motion</h1>
+          <div style={{ width: 60, height: 1, backgroundColor: '#3A3835', margin: '30px auto' }} />
+          <p style={{ fontSize: 16, color: '#A8A59E', fontFamily: 'system-ui', margin: 0 }}>Every frame generated from pure TypeScript.</p>
+        </div>
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+`;
+
+const SAMPLE_CODE_4 = `import { useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, Sequence } from 'remotion';
+
+export const Composition = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const badgeScale = spring({ frame, fps, config: { damping: 12 } });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1F1E1D', color: '#FAF9F5', fontFamily: 'system-ui, sans-serif' }}>
+      <Sequence from={0} durationInFrames={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 40px', textAlign: 'center' }}>
+          <div style={{ transform: \`scale(\${badgeScale})\`, padding: '6px 14px', borderRadius: 999, backgroundColor: '#2A2927', border: '1px solid #3A3835', color: '#D97757', fontSize: 13, fontWeight: 700, marginBottom: 20 }}>RELEASE 2.4</div>
+          <h1 style={{ fontSize: 44, fontWeight: 800, margin: '0 0 20px 0' }}>Supercharged Performance</h1>
+          <p style={{ fontSize: 16, color: '#A8A59E', margin: 0 }}>10x faster frame rendering directly in your browser tab.</p>
+        </div>
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+`;
+
+const SAMPLE_CODE_5 = `import { useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, Sequence } from 'remotion';
+
+export const Composition = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  const ring = interpolate(frame, [0, 90], [0, 100], { extrapolateRight: 'clamp' });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#1F1E1D', color: '#FAF9F5', fontFamily: 'system-ui, sans-serif' }}>
+      <Sequence from={0} durationInFrames={450}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 40px', textAlign: 'center' }}>
+          <div style={{ width: 140, height: 140, borderRadius: '50%', border: '8px solid #2A2927', borderTopColor: '#D97757', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 30, transform: 'rotate(-45deg)' }}>
+            <span style={{ transform: 'rotate(45deg)', fontSize: 28, fontWeight: 800, color: '#FAF9F5' }}>{Math.round(ring)}%</span>
+          </div>
+          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 12px 0' }}>Daily Streak</h1>
+          <p style={{ fontSize: 16, color: '#A8A59E', margin: 0 }}>Consistency engineered into every habit.</p>
+        </div>
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+`;
+
+const createDummyVideo = (
+  id: string,
+  title: string,
+  code: string,
+  durationSec: number = 20,
+  currentSec: number = 6
+): VideoProject => {
+  return {
+    id,
+    title,
+    aspectRatio: '9:16',
+    durationSec,
+    currentSec,
+    fps: 30,
+    resolution: '720x1280',
+    code,
+    videoConfig: {
+      width: 720,
+      height: 1280,
+      fps: 30,
+      durationInFrames: durationSec * 30,
+    },
+    scenes: [
+      { id: `${id}-1`, title: '01. Kinetic Reveal', duration: '0:06', visualStyle: 'Minimal dark matte', codeSummary: 'Spring physics + typography' },
+      { id: `${id}-2`, title: '02. Feature Focus', duration: '0:08', visualStyle: 'Precision layout', codeSummary: 'Interpolated motion' },
+      { id: `${id}-3`, title: '03. Outro Lockup', duration: '0:06', visualStyle: 'Clean CTA', codeSummary: 'Sequence timing' },
+    ],
+    primaryCodeSnippet: code,
+  };
+};
 
 export const INITIAL_PAST_CHATS: ChatSession[] = [
   {
     id: 'chat-1',
     title: '3D Product Launch Reel',
     timestamp: '2 hours ago',
+    latestCode: SAMPLE_CODE_1,
     messages: [
       {
         id: 'msg-1-1',
         role: 'user',
-        content: 'Create a 30s 9:16 vertical reel for a minimal ceramic coffee grinder launch. Fast cuts, macro typography, and sleek kinetic motion.',
+        content: 'Create a 9:16 vertical reel for a minimal ceramic coffee grinder launch. Fast cuts, macro typography, and sleek kinetic motion.',
         timestamp: '10:24 AM',
       },
       {
         id: 'msg-1-2',
         role: 'assistant',
-        content: "I've structured a 4-scene kinetic composition using Remotion with Spring physics and interpolated camera pans. Here is the rendering breakdown:",
+        content: "I've structured a 2-scene kinetic composition using Remotion with Spring physics and clean macro typography. Here is the rendering breakdown:",
         timestamp: '10:25 AM',
         tasks: [
           {
             id: 't-1-1',
-            label: 'Wrote storyboard - 4 scenes',
+            label: 'Wrote storyboard - 2 scenes',
             status: 'done',
             detailTitle: 'storyboard.json',
-            codeSnippet: `{\n  "ratio": "9:16",\n  "fps": 30,\n  "durationInFrames": 900,\n  "scenes": [\n    { "id": "intro", "frames": 180, "action": "macro_pan" },\n    { "id": "burr_precision", "frames": 240, "action": "exploded_view" },\n    { "id": "grind_flow", "frames": 240, "action": "particle_cascade" },\n    { "id": "cta", "frames": 240, "action": "minimal_lockup" }\n  ]\n}`,
+            codeSnippet: `{\n  "ratio": "9:16",\n  "fps": 30,\n  "durationInFrames": 600,\n  "scenes": [\n    { "id": "intro", "frames": 240, "action": "macro_pan" },\n    { "id": "precision", "frames": 360, "action": "callout_reveal" }\n  ]\n}`,
           },
           {
             id: 't-1-2',
-            label: 'Wrote Scene1.tsx (Macro Reveal)',
+            label: 'Wrote Composition.tsx',
             status: 'done',
-            detailTitle: 'src/scenes/Scene1.tsx',
-            codeSnippet: `import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';\n\nexport const Scene1 = () => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const scale = spring({ frame, fps, config: { damping: 14 } });\n  const opacity = interpolate(frame, [0, 20], [0, 1]);\n  return (\n    <div className="flex flex-col items-center justify-center h-full text-center">\n      <h1 style={{ transform: \`scale(\${scale})\`, opacity }}>\n        KRONOS TITANIUM\n      </h1>\n    </div>\n  );\n};`,
+            detailTitle: 'Composition.tsx',
+            codeSnippet: SAMPLE_CODE_1,
           },
           {
             id: 't-1-3',
-            label: 'Wrote Scene2.tsx (Burr Precision)',
-            status: 'done',
-            detailTitle: 'src/scenes/Scene2.tsx',
-            codeSnippet: `// 48mm conical burrs precision engineering callout\nexport const Scene2 = () => {\n  const frame = useCurrentFrame();\n  const rot = interpolate(frame, [0, 240], [0, 720]);\n  return (\n    <div className="relative w-full h-full flex items-center justify-center">\n      <div style={{ transform: \`rotate(\${rot}deg)\` }} className="burr-ring" />\n      <div className="spec-label">48MM HEPTAGONAL STAINLESS</div>\n    </div>\n  );\n};`,
-          },
-          {
-            id: 't-1-4',
-            label: 'Rendering video... 100%',
+            label: 'Rendered composition preview',
             status: 'done',
             progress: 100,
-            detailTitle: 'remotion-render.log',
-            codeSnippet: `[remotion] Frame 0 to 900 rendered in 4.28s\n[remotion] Audio mixdown: 48kHz stereo\n[remotion] H.264 CRF 18 output encoded\n[remotion] Target: ./out/kronos_launch_9x16.mp4`,
+            detailTitle: 'web-renderer.log',
+            codeSnippet: `[remotion] Compiled composition in browser sandbox.\n[remotion] Ready for live playback or MP4 export.`,
           },
         ],
-        video: {
-          id: 'vid-1',
-          title: 'Kronos Ceramic Grinder Reel',
-          aspectRatio: '9:16',
-          durationSec: 30,
-          currentSec: 12,
-          fps: 30,
-          resolution: '1080x1920',
-          scenes: [
-            { id: 'sc-1', title: '01. Title Reveal', duration: '0:06', visualStyle: 'Ceramic matte dark', codeSummary: 'Scale spring + macro blur' },
-            { id: 'sc-2', title: '02. Burr Exploded View', duration: '0:08', visualStyle: 'Precision wireframe', codeSummary: '3D CSS rot + dimension lines' },
-            { id: 'sc-3', title: '03. Particle Grind Flow', duration: '0:08', visualStyle: 'Dynamic speed ramp', codeSummary: 'SVG particle scatter canvas' },
-            { id: 'sc-4', title: '04. Minimalist CTA', duration: '0:08', visualStyle: 'Clean typography', codeSummary: 'Staggered letter reveal' },
-          ],
-          primaryCodeSnippet: `// Composition: KronosLaunch\n<Composition\n  id="KronosLaunch"\n  component={KronosReel}\n  durationInFrames={900}\n  fps={30}\n  width={1080}\n  height={1920}\n/>`,
-        },
+        video: createDummyVideo('vid-1', 'Kronos Ceramic Grinder Reel', SAMPLE_CODE_1, 20, 6),
       },
     ],
     terminalLines: [
-      { id: 'l1', text: '$ npx remotion render src/index.ts KronosLaunch out.mp4', type: 'command', timestamp: '10:24:41' },
-      { id: 'l2', text: '[remotion] Initialized Chromium headless v122.0.6261.94', type: 'log', timestamp: '10:24:42' },
-      { id: 'l3', text: '[remotion] Bundled 4 scenes in 184ms with esbuild', type: 'log', timestamp: '10:24:42' },
-      { id: 'l4', text: '[remotion] Rendering 900 frames @ 1080x1920...', type: 'log', timestamp: '10:24:43' },
-      { id: 'l5', text: '[remotion] Frame 150/900 [████░░░░░░] 16.7%', type: 'dim', timestamp: '10:24:44' },
-      { id: 'l6', text: '[remotion] Frame 450/900 [█████████░] 50.0%', type: 'dim', timestamp: '10:24:45' },
-      { id: 'l7', text: '[remotion] Frame 900/900 [██████████] 100.0%', type: 'highlight', timestamp: '10:24:46' },
-      { id: 'l8', text: '[remotion] Encoding audio track (48kHz stereo, AAC 320kbps)', type: 'log', timestamp: '10:24:46' },
-      { id: 'l9', text: '✓ Successfully rendered video to ./out/kronos_launch_9x16.mp4 (14.2 MB)', type: 'success', timestamp: '10:24:47' },
+      { id: 'l1', text: '$ remotion compile Composition.tsx (720x1280 @ 30fps)', type: 'command', timestamp: '10:24:41' },
+      { id: 'l2', text: '[remotion] Sandboxed code evaluation: OK', type: 'log', timestamp: '10:24:42' },
+      { id: 'l3', text: '✓ Composition loaded in browser preview', type: 'success', timestamp: '10:24:43' },
     ],
-    video: {
-      id: 'vid-1',
-      title: 'Kronos Ceramic Grinder Reel',
-      aspectRatio: '9:16',
-      durationSec: 30,
-      currentSec: 12,
-      fps: 30,
-      resolution: '1080x1920',
-      scenes: [
-        { id: 'sc-1', title: '01. Title Reveal', duration: '0:06', visualStyle: 'Ceramic matte dark', codeSummary: 'Scale spring + macro blur' },
-        { id: 'sc-2', title: '02. Burr Exploded View', duration: '0:08', visualStyle: 'Precision wireframe', codeSummary: '3D CSS rot + dimension lines' },
-        { id: 'sc-3', title: '03. Particle Grind Flow', duration: '0:08', visualStyle: 'Dynamic speed ramp', codeSummary: 'SVG particle scatter canvas' },
-        { id: 'sc-4', title: '04. Minimalist CTA', duration: '0:08', visualStyle: 'Clean typography', codeSummary: 'Staggered letter reveal' },
-      ],
-      primaryCodeSnippet: `// Composition: KronosLaunch\n<Composition\n  id="KronosLaunch"\n  component={KronosReel}\n  durationInFrames={900}\n  fps={30}\n  width={1080}\n  height={1920}\n/>`,
-    },
+    video: createDummyVideo('vid-1', 'Kronos Ceramic Grinder Reel', SAMPLE_CODE_1, 20, 6),
   },
   {
     id: 'chat-2',
     title: 'SaaS Feature Explainer',
     timestamp: 'Yesterday',
+    latestCode: SAMPLE_CODE_2,
     messages: [
       {
         id: 'msg-2-1',
         role: 'user',
-        content: 'Generate a 20s teaser explaining real-time collaborative database migrations with visual SQL diffs.',
+        content: 'Generate a 10s teaser explaining real-time collaborative database migrations with visual SQL diffs.',
         timestamp: '3:15 PM',
       },
       {
         id: 'msg-2-2',
         role: 'assistant',
-        content: 'Created a snappy UI-driven demo using animated syntax-highlighted code blocks and live diff transitions:',
+        content: 'Created a UI-driven demo using animated syntax-highlighted code blocks and live diff transitions:',
         timestamp: '3:16 PM',
         tasks: [
           {
             id: 't-2-1',
-            label: 'Wrote storyboard - 3 scenes',
+            label: 'Wrote storyboard - 1 scene',
             status: 'done',
             detailTitle: 'storyboard.json',
-            codeSnippet: `{\n  "concept": "SQL Schema Instant Diff",\n  "ratio": "9:16",\n  "durationInFrames": 600\n}`,
+            codeSnippet: `{\n  "concept": "SQL Schema Instant Diff",\n  "ratio": "9:16",\n  "durationInFrames": 300\n}`,
           },
           {
             id: 't-2-2',
-            label: 'Wrote SchemaDiff.tsx',
+            label: 'Wrote Composition.tsx',
             status: 'done',
-            detailTitle: 'src/components/SchemaDiff.tsx',
-            codeSnippet: `// Animated row insertion and column type morphing\nexport const SchemaDiff = ({ step }: { step: number }) => {\n  return (\n    <div className="p-4 font-mono text-xs bg-[#2A2927] border border-[#3A3835] rounded-lg">\n      <div className="text-[#A8A59E]">-- Auto-generated migration</div>\n      <div className="text-[#FAF9F5]">+ ALTER TABLE users ADD COLUMN tier text;</div>\n    </div>\n  );\n};`,
-          },
-          {
-            id: 't-2-3',
-            label: 'Rendering video... 100%',
-            status: 'done',
-            progress: 100,
-            detailTitle: 'render.log',
-            codeSnippet: `[remotion] Render completed in 2.91s (600 frames at 30fps). Output: schema_diff.mp4`,
+            detailTitle: 'Composition.tsx',
+            codeSnippet: SAMPLE_CODE_2,
           },
         ],
-        video: {
-          id: 'vid-2',
-          title: 'SaaS Schema Diff Explainer',
-          aspectRatio: '9:16',
-          durationSec: 20,
-          currentSec: 8,
-          fps: 30,
-          resolution: '1080x1920',
-          scenes: [
-            { id: 'sc-2-1', title: '01. The Problem', duration: '0:05', visualStyle: 'Merge conflict UI', codeSummary: 'Red flash + syntax shake' },
-            { id: 'sc-2-2', title: '02. Zero-Downtime Diff', duration: '0:08', visualStyle: 'Code morphing', codeSummary: 'Line-by-line spring transition' },
-            { id: 'sc-2-3', title: '03. Safe Deploy Lockup', duration: '0:07', visualStyle: 'Green check confirmation', codeSummary: 'Terminal pulse effect' },
-          ],
-          primaryCodeSnippet: `<Composition id="SchemaDiff" component={DiffVideo} durationInFrames={600} fps={30} width={1080} height={1920} />`,
-        },
+        video: createDummyVideo('vid-2', 'SaaS Schema Diff Explainer', SAMPLE_CODE_2, 10, 4),
       },
     ],
     terminalLines: [
-      { id: 'l2-1', text: '$ npx remotion render src/SchemaDiff.tsx SchemaDiff out.mp4', type: 'command', timestamp: '15:15:32' },
-      { id: 'l2-2', text: '[remotion] Compiling Tailwind CSS bundle for 1080x1920 viewport', type: 'log', timestamp: '15:15:33' },
-      { id: 'l2-3', text: '[remotion] Cached 600 frames to memory', type: 'log', timestamp: '15:15:34' },
-      { id: 'l2-4', text: '✓ Output written to ./out/schema_diff.mp4 (8.7 MB)', type: 'success', timestamp: '15:15:35' },
+      { id: 'l2-1', text: '$ remotion compile SchemaDiff.tsx', type: 'command', timestamp: '15:15:32' },
+      { id: 'l2-2', text: '✓ Composition mounted in @remotion/player', type: 'success', timestamp: '15:15:33' },
     ],
-    video: {
-      id: 'vid-2',
-      title: 'SaaS Schema Diff Explainer',
-      aspectRatio: '9:16',
-      durationSec: 20,
-      currentSec: 8,
-      fps: 30,
-      resolution: '1080x1920',
-      scenes: [
-        { id: 'sc-2-1', title: '01. The Problem', duration: '0:05', visualStyle: 'Merge conflict UI', codeSummary: 'Red flash + syntax shake' },
-        { id: 'sc-2-2', title: '02. Zero-Downtime Diff', duration: '0:08', visualStyle: 'Code morphing', codeSummary: 'Line-by-line spring transition' },
-        { id: 'sc-2-3', title: '03. Safe Deploy Lockup', duration: '0:07', visualStyle: 'Green check confirmation', codeSummary: 'Terminal pulse effect' },
-      ],
-      primaryCodeSnippet: `<Composition id="SchemaDiff" component={DiffVideo} durationInFrames={600} fps={30} width={1080} height={1920} />`,
-    },
+    video: createDummyVideo('vid-2', 'SaaS Schema Diff Explainer', SAMPLE_CODE_2, 10, 4),
   },
   {
     id: 'chat-3',
     title: 'Typography Kinetic Intro',
     timestamp: '3 days ago',
+    latestCode: SAMPLE_CODE_3,
     messages: [
       {
         id: 'msg-3-1',
@@ -187,218 +267,101 @@ export const INITIAL_PAST_CHATS: ChatSession[] = [
       {
         id: 'msg-3-2',
         role: 'assistant',
-        content: 'Wrote an editorial typography sequence inspired by modern print broadsheets with staggered spring delays for each character cluster:',
+        content: 'Wrote an editorial typography sequence with smooth scale and rotation spring physics:',
         timestamp: '11:03 AM',
         tasks: [
           {
             id: 't-3-1',
-            label: 'Wrote KineticText.tsx',
+            label: 'Wrote Composition.tsx',
             status: 'done',
-            detailTitle: 'src/KineticText.tsx',
-            codeSnippet: `export const KineticWord = ({ word, delay }: { word: string; delay: number }) => {\n  const frame = useCurrentFrame();\n  const y = spring({ frame: frame - delay, fps: 30, from: 80, to: 0 });\n  return <span style={{ transform: \`translateY(\${y}px)\` }}>{word}</span>;\n};`,
-          },
-          {
-            id: 't-3-2',
-            label: 'Rendering video... 100%',
-            status: 'done',
-            progress: 100,
-            detailTitle: 'render.log',
-            codeSnippet: `[remotion] Render completed in 1.84s (450 frames). Output: kinetic_intro.mp4`,
+            detailTitle: 'Composition.tsx',
+            codeSnippet: SAMPLE_CODE_3,
           },
         ],
-        video: {
-          id: 'vid-3',
-          title: 'Kinetic Editorial Typography',
-          aspectRatio: '9:16',
-          durationSec: 15,
-          currentSec: 5,
-          fps: 30,
-          resolution: '1080x1920',
-          scenes: [
-            { id: 'sc-3-1', title: '01. Title Stagger', duration: '0:04', visualStyle: 'Editorial serif', codeSummary: 'Letter-by-letter spring' },
-            { id: 'sc-3-2', title: '02. Statement Shift', duration: '0:06', visualStyle: 'Inverted monochrome', codeSummary: 'Contrast wipe' },
-            { id: 'sc-3-3', title: '03. Outro Mark', duration: '0:05', visualStyle: 'Centered logo lockup', codeSummary: 'Scale-down settling' },
-          ],
-          primaryCodeSnippet: `<Composition id="KineticIntro" component={KineticSequence} durationInFrames={450} fps={30} width={1080} height={1920} />`,
-        },
+        video: createDummyVideo('vid-3', 'Kinetic Editorial Typography', SAMPLE_CODE_3, 15, 5),
       },
     ],
     terminalLines: [
-      { id: 'l3-1', text: '$ npx remotion render src/KineticIntro.tsx out.mp4', type: 'command', timestamp: '11:02:45' },
-      { id: 'l3-2', text: '[remotion] Parsing web fonts & ligature glyphs', type: 'log', timestamp: '11:02:46' },
-      { id: 'l3-3', text: '✓ Done in 1.84s -> ./out/kinetic_intro.mp4 (4.1 MB)', type: 'success', timestamp: '11:02:47' },
+      { id: 'l3-1', text: '$ remotion compile KineticIntro.tsx', type: 'command', timestamp: '11:02:45' },
+      { id: 'l3-2', text: '✓ Ready in player', type: 'success', timestamp: '11:02:46' },
     ],
-    video: {
-      id: 'vid-3',
-      title: 'Kinetic Editorial Typography',
-      aspectRatio: '9:16',
-      durationSec: 15,
-      currentSec: 5,
-      fps: 30,
-      resolution: '1080x1920',
-      scenes: [
-        { id: 'sc-3-1', title: '01. Title Stagger', duration: '0:04', visualStyle: 'Editorial serif', codeSummary: 'Letter-by-letter spring' },
-        { id: 'sc-3-2', title: '02. Statement Shift', duration: '0:06', visualStyle: 'Inverted monochrome', codeSummary: 'Contrast wipe' },
-        { id: 'sc-3-3', title: '03. Outro Mark', duration: '0:05', visualStyle: 'Centered logo lockup', codeSummary: 'Scale-down settling' },
-      ],
-      primaryCodeSnippet: `<Composition id="KineticIntro" component={KineticSequence} durationInFrames={450} fps={30} width={1080} height={1920} />`,
-    },
+    video: createDummyVideo('vid-3', 'Kinetic Editorial Typography', SAMPLE_CODE_3, 15, 5),
   },
   {
     id: 'chat-4',
     title: 'Changelog Video Teaser',
     timestamp: 'May 12',
+    latestCode: SAMPLE_CODE_4,
     messages: [
       {
         id: 'msg-4-1',
         role: 'user',
-        content: 'Make a 15s release announcement reel showcasing 3 new features: AI auto-tagging, bulk export, and dark mode.',
+        content: 'Make a 12s release announcement reel showcasing version 2.4 performance upgrades.',
         timestamp: '2:40 PM',
       },
       {
         id: 'msg-4-2',
         role: 'assistant',
-        content: 'Engineered a rapid 3-badge feature highlight with sound effect markers and smooth card transitions:',
+        content: 'Engineered a rapid release card highlight with smooth scale transitions:',
         timestamp: '2:41 PM',
         tasks: [
           {
             id: 't-4-1',
-            label: 'Wrote FeatureCards.tsx',
+            label: 'Wrote Composition.tsx',
             status: 'done',
-            detailTitle: 'src/FeatureCards.tsx',
-            codeSnippet: `// 3 feature items sliding sequentially into view\nexport const FeatureCards = () => (\n  <div className="space-y-4 px-6">\n    <Card index={0} title="AI Auto-tagging" />\n    <Card index={1} title="Instant Bulk Export" />\n    <Card index={2} title="OLED Dark Mode" />\n  </div>\n);`,
-          },
-          {
-            id: 't-4-2',
-            label: 'Rendering video... 100%',
-            status: 'done',
-            progress: 100,
-            detailTitle: 'render.log',
-            codeSnippet: `[remotion] Render completed in 2.1s. Output: v2_release_reel.mp4`,
+            detailTitle: 'Composition.tsx',
+            codeSnippet: SAMPLE_CODE_4,
           },
         ],
-        video: {
-          id: 'vid-4',
-          title: 'Version 2.0 Feature Teaser',
-          aspectRatio: '9:16',
-          durationSec: 15,
-          currentSec: 10,
-          fps: 30,
-          resolution: '1080x1920',
-          scenes: [
-            { id: 'sc-4-1', title: '01. Version 2.0 Badge', duration: '0:04', visualStyle: 'Badge zoom', codeSummary: 'Spring bounce' },
-            { id: 'sc-4-2', title: '02. Feature Showcase', duration: '0:07', visualStyle: 'Card stack carousel', codeSummary: 'Staggered slide-in' },
-            { id: 'sc-4-3', title: '03. Update CTA', duration: '0:04', visualStyle: 'Minimal CTA', codeSummary: 'Pulse indicator' },
-          ],
-          primaryCodeSnippet: `<Composition id="V2Changelog" component={ChangelogReel} durationInFrames={450} fps={30} width={1080} height={1920} />`,
-        },
+        video: createDummyVideo('vid-4', 'Version 2.4 Feature Teaser', SAMPLE_CODE_4, 12, 5),
       },
     ],
     terminalLines: [
-      { id: 'l4-1', text: '$ npx remotion render src/Changelog.tsx out.mp4', type: 'command', timestamp: '14:40:12' },
-      { id: 'l4-2', text: '[remotion] Bundled audio effects & soundtrack', type: 'log', timestamp: '14:40:13' },
-      { id: 'l4-3', text: '✓ Rendered ./out/v2_release_reel.mp4 in 2.1s', type: 'success', timestamp: '14:40:14' },
+      { id: 'l4-1', text: '$ remotion compile ReleaseTeaser.tsx', type: 'command', timestamp: '14:40:12' },
+      { id: 'l4-2', text: '✓ Verified preview', type: 'success', timestamp: '14:40:13' },
     ],
-    video: {
-      id: 'vid-4',
-      title: 'Version 2.0 Feature Teaser',
-      aspectRatio: '9:16',
-      durationSec: 15,
-      currentSec: 10,
-      fps: 30,
-      resolution: '1080x1920',
-      scenes: [
-        { id: 'sc-4-1', title: '01. Version 2.0 Badge', duration: '0:04', visualStyle: 'Badge zoom', codeSummary: 'Spring bounce' },
-        { id: 'sc-4-2', title: '02. Feature Showcase', duration: '0:07', visualStyle: 'Card stack carousel', codeSummary: 'Staggered slide-in' },
-        { id: 'sc-4-3', title: '03. Update CTA', duration: '0:04', visualStyle: 'Minimal CTA', codeSummary: 'Pulse indicator' },
-      ],
-      primaryCodeSnippet: `<Composition id="V2Changelog" component={ChangelogReel} durationInFrames={450} fps={30} width={1080} height={1920} />`,
-    },
+    video: createDummyVideo('vid-4', 'Version 2.4 Feature Teaser', SAMPLE_CODE_4, 12, 5),
   },
   {
     id: 'chat-5',
     title: 'Mobile App Walkthrough',
     timestamp: 'May 8',
+    latestCode: SAMPLE_CODE_5,
     messages: [
       {
         id: 'msg-5-1',
         role: 'user',
-        content: 'Create a 30s TikTok-style showcase for a habit tracker app with realistic phone bezel mockups and smooth screen swipes.',
+        content: 'Create a 15s showcase for a habit tracker app with a animated progress ring and streak counter.',
         timestamp: '9:12 AM',
       },
       {
         id: 'msg-5-2',
         role: 'assistant',
-        content: 'Created an iPhone 16 mockup frame with nested SVG progress rings and gesture animations:',
+        content: 'Created a circular progress indicator sequence with animated percentage counter:',
         timestamp: '9:13 AM',
         tasks: [
           {
             id: 't-5-1',
-            label: 'Wrote DeviceFrame.tsx',
+            label: 'Wrote Composition.tsx',
             status: 'done',
-            detailTitle: 'src/DeviceFrame.tsx',
-            codeSnippet: `export const DeviceFrame = ({ children }: { children: React.ReactNode }) => (\n  <div className="relative w-[340px] h-[700px] border-[8px] border-[#3A3835] rounded-[48px] overflow-hidden bg-[#1F1E1D] shadow-none">\n    {children}\n  </div>\n);`,
-          },
-          {
-            id: 't-5-2',
-            label: 'Wrote HabitRing.tsx',
-            status: 'done',
-            detailTitle: 'src/HabitRing.tsx',
-            codeSnippet: `// Smooth circular SVG progress fill\nexport const HabitRing = ({ progress }: { progress: number }) => {\n  const strokeDashoffset = 280 - (280 * progress);\n  return <circle strokeDashoffset={strokeDashoffset} stroke="#D97757" />;\n};`,
-          },
-          {
-            id: 't-5-3',
-            label: 'Rendering video... 100%',
-            status: 'done',
-            progress: 100,
-            detailTitle: 'render.log',
-            codeSnippet: `[remotion] Render completed in 3.4s (900 frames at 30fps). Output: habit_tracker_showcase.mp4`,
+            detailTitle: 'Composition.tsx',
+            codeSnippet: SAMPLE_CODE_5,
           },
         ],
-        video: {
-          id: 'vid-5',
-          title: 'Habit Tracker App Showcase',
-          aspectRatio: '9:16',
-          durationSec: 30,
-          currentSec: 18,
-          fps: 30,
-          resolution: '1080x1920',
-          scenes: [
-            { id: 'sc-5-1', title: '01. Phone Entry', duration: '0:06', visualStyle: 'Phone float in', codeSummary: 'Spring tilt' },
-            { id: 'sc-5-2', title: '02. Streak Counter', duration: '0:12', visualStyle: 'Progress ring fill', codeSummary: 'Animated dash array' },
-            { id: 'sc-5-3', title: '03. App Store CTA', duration: '0:12', visualStyle: 'Clean typography', codeSummary: 'Button tap animation' },
-          ],
-          primaryCodeSnippet: `<Composition id="AppWalkthrough" component={AppShowcase} durationInFrames={900} fps={30} width={1080} height={1920} />`,
-        },
+        video: createDummyVideo('vid-5', 'Habit Tracker App Showcase', SAMPLE_CODE_5, 15, 6),
       },
     ],
     terminalLines: [
-      { id: 'l5-1', text: '$ npx remotion render src/AppWalkthrough.tsx out.mp4', type: 'command', timestamp: '09:12:30' },
-      { id: 'l5-2', text: '[remotion] Rendering phone frame vectors and shadow blur filters', type: 'log', timestamp: '09:12:31' },
-      { id: 'l5-3', text: '✓ Successfully rendered ./out/habit_tracker_showcase.mp4 (16.8 MB)', type: 'success', timestamp: '09:12:34' },
+      { id: 'l5-1', text: '$ remotion compile HabitStreak.tsx', type: 'command', timestamp: '09:12:30' },
+      { id: 'l5-2', text: '✓ Ready in player', type: 'success', timestamp: '09:12:31' },
     ],
-    video: {
-      id: 'vid-5',
-      title: 'Habit Tracker App Showcase',
-      aspectRatio: '9:16',
-      durationSec: 30,
-      currentSec: 18,
-      fps: 30,
-      resolution: '1080x1920',
-      scenes: [
-        { id: 'sc-5-1', title: '01. Phone Entry', duration: '0:06', visualStyle: 'Phone float in', codeSummary: 'Spring tilt' },
-        { id: 'sc-5-2', title: '02. Streak Counter', duration: '0:12', visualStyle: 'Progress ring fill', codeSummary: 'Animated dash array' },
-        { id: 'sc-5-3', title: '03. App Store CTA', duration: '0:12', visualStyle: 'Clean typography', codeSummary: 'Button tap animation' },
-      ],
-      primaryCodeSnippet: `<Composition id="AppWalkthrough" component={AppShowcase} durationInFrames={900} fps={30} width={1080} height={1920} />`,
-    },
+    video: createDummyVideo('vid-5', 'Habit Tracker App Showcase', SAMPLE_CODE_5, 15, 6),
   },
 ];
 
-// Quick suggestions for empty state
 export const QUICK_PROMPTS = [
   '9:16 Kinetic typography launch reel',
   'SaaS code diff & architecture explainer',
-  'Minimalist hardware product 3D rotation',
-  'Fast-paced changelog release announcement',
+  'Minimalist hardware product release teaser',
+  'Fast-paced changelog feature announcement',
 ];
