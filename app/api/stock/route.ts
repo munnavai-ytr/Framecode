@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+
 interface StockResult {
   id: string | number;
   type: 'video' | 'photo';
@@ -38,31 +40,33 @@ interface PixabayPhotoHit {
   imageHeight: number;
 }
 
+function getPreviewUrl(hit: PixabayVideoHit, fallbackFileUrl: string): string {
+  const v = hit.videos;
+  if (v?.medium?.thumbnail) return v.medium.thumbnail;
+  if (v?.small?.thumbnail) return v.small.thumbnail;
+  if (v?.tiny?.thumbnail) return v.tiny.thumbnail;
+  if (v?.large?.thumbnail) return v.large.thumbnail;
+  return fallbackFileUrl;
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const pixabayKey = process.env.PIXABAY_API_KEY;
+
+    if (!pixabayKey) {
+      return NextResponse.json(
+        { error: 'Stock video search requires PIXABAY_API_KEY set on server' },
+        { status: 503 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     const query = searchParams.get('q') || searchParams.get('query');
     const typeParam = searchParams.get('type'); // 'photo' or 'video'
 
-    const pixabayKey = process.env.PIXABAY_API_KEY;
-
     // 1. Fetch single stock item by ID (GET /api/stock?id=...)
     if (id) {
-      if (!pixabayKey) {
-        // Fallback placeholder item
-        return NextResponse.json({
-          result: {
-            id,
-            type: 'photo',
-            previewUrl: `https://picsum.photos/seed/${id}/720/1280`,
-            fileUrl: `https://picsum.photos/seed/${id}/720/1280`,
-            width: 720,
-            height: 1280,
-          },
-        });
-      }
-
       // Try fetching as video hit first
       const videoRes = await fetch(
         `https://pixabay.com/api/videos/?key=${encodeURIComponent(pixabayKey)}&id=${encodeURIComponent(id)}`,
@@ -79,7 +83,7 @@ export async function GET(req: NextRequest) {
               result: {
                 id: hit.id,
                 type: 'video',
-                previewUrl: hit.picture_id ? `https://i.vimeocdn.com/video/${hit.picture_id}_295x166.jpg` : mediumFile.url,
+                previewUrl: getPreviewUrl(hit, mediumFile.url),
                 fileUrl: mediumFile.url,
                 duration: hit.duration,
                 width: mediumFile.width || 1280,
@@ -121,28 +125,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    if (!pixabayKey) {
-      const fallbackAssets: StockResult[] = [
-        {
-          id: `fallback-1-${query}`,
-          type: 'photo',
-          previewUrl: `https://picsum.photos/seed/${encodeURIComponent(query)}1/720/1280`,
-          fileUrl: `https://picsum.photos/seed/${encodeURIComponent(query)}1/720/1280`,
-          width: 720,
-          height: 1280,
-        },
-        {
-          id: `fallback-2-${query}`,
-          type: 'photo',
-          previewUrl: `https://picsum.photos/seed/${encodeURIComponent(query)}2/720/1280`,
-          fileUrl: `https://picsum.photos/seed/${encodeURIComponent(query)}2/720/1280`,
-          width: 720,
-          height: 1280,
-        },
-      ];
-      return NextResponse.json({ results: fallbackAssets, note: 'PIXABAY_API_KEY not configured, using fallback assets' });
-    }
-
     const results: StockResult[] = [];
 
     // If photo is requested specifically
@@ -180,13 +162,12 @@ export async function GET(req: NextRequest) {
         if (Array.isArray(vData.hits)) {
           for (const hit of vData.hits as PixabayVideoHit[]) {
             if (results.length >= 3) break;
-            // Prefer "medium" file URL, fall back to "small" or "large"
             const mediaFile = hit.videos?.medium || hit.videos?.small || hit.videos?.large;
             if (mediaFile?.url) {
               results.push({
                 id: hit.id,
                 type: 'video',
-                previewUrl: hit.picture_id ? `https://i.vimeocdn.com/video/${hit.picture_id}_295x166.jpg` : mediaFile.url,
+                previewUrl: getPreviewUrl(hit, mediaFile.url),
                 fileUrl: mediaFile.url,
                 duration: hit.duration,
                 width: mediaFile.width || 1280,

@@ -40,6 +40,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button {
+  user-select: none;
+}
+
 /* Monospace font stack for terminal and code */
 .font-mono,
 pre,
@@ -74,4 +78,3 @@ input,
 textarea {
   touch-action: manipulation;
 }
-

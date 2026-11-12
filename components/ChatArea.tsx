@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Sparkles } from 'lucide-react';
-import { ChatMessage, VideoProject } from '@/types/framecode';
+import { ArrowUp, Sparkles, Settings, ChevronDown } from 'lucide-react';
+import { ChatMessage, VideoProject, ModelSelection } from '@/types/framecode';
 import { TaskRowItem } from './TaskRowItem';
 import { VideoPlayer } from './VideoPlayer';
-import { QUICK_PROMPTS } from '@/data/dummyChats';
+import { ProviderLogo } from './ProviderLogo';
 
 interface ChatAreaProps {
   messages: ChatMessage[];
@@ -14,6 +14,9 @@ interface ChatAreaProps {
   isStreaming: boolean;
   onRenderAndDownload?: () => void;
   isRenderingMp4?: boolean;
+  selection: ModelSelection;
+  onOpenModelPicker: () => void;
+  onOpenSettings: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -23,12 +26,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   isStreaming,
   onRenderAndDownload,
   isRenderingMp4 = false,
+  selection,
+  onOpenModelPicker,
+  onOpenSettings,
 }) => {
   const [inputText, setInputText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom of chat
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
@@ -37,7 +42,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     scrollToBottom('smooth');
   }, [messages.length, isStreaming]);
 
-  // Adjust textarea height dynamically
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputText(e.target.value);
     const textarea = textareaRef.current;
@@ -64,11 +68,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     }
   };
 
-  const handlePromptClick = (prompt: string) => {
-    if (isStreaming) return;
-    onSendMessage(prompt);
-  };
-
   const isEmpty = messages.length === 0;
 
   return (
@@ -88,20 +87,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <p className="mt-2 text-sm text-[#A8A59E] max-w-md">
                 Describe a visual concept, storyboard, or motion graphics idea. Framecode writes Remotion React code and renders a 9:16 vertical reel.
               </p>
-
-              {/* Quick suggestion prompt chips */}
-              <div className="mt-8 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-2 text-left">
-                {QUICK_PROMPTS.map((prompt, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handlePromptClick(prompt)}
-                    className="flex min-h-[44px] items-center rounded-[10px] border border-[#3A3835] bg-[#2A2927] p-3 text-xs text-[#FAF9F5] hover:bg-[#33322F] hover:border-[#484542] transition-colors"
-                  >
-                    <span className="truncate">{prompt}</span>
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             /* Message List */
@@ -124,6 +109,19 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <div className="w-full text-sm leading-relaxed text-[#FAF9F5] select-text">
                         <div className="mb-2 text-[#FAF9F5]">
                           <p className="whitespace-pre-wrap">{msg.content}</p>
+
+                          {msg.action === 'open-settings' && (
+                            <div className="mt-3">
+                              <button
+                                type="button"
+                                onClick={onOpenSettings}
+                                className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg border border-[#D97757] bg-[#D97757]/10 text-[#D97757] hover:bg-[#D97757]/20 text-xs font-medium transition cursor-pointer"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                                <span>Open Settings</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Task Rows */}
@@ -159,11 +157,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       </div>
 
-      {/* Input Box Area - Fixed at bottom, max 720px width */}
+      {/* Input Box Area */}
       <div className="border-t border-[#3A3835] bg-[#1F1E1D] p-3 md:p-4">
         <div className="mx-auto max-w-[720px] w-full">
-          <div className="relative flex items-end rounded-[12px] border border-[#3A3835] bg-[#2A2927] p-2 focus-within:border-[#484542] transition-colors">
-            {/* Auto-growing Textarea */}
+          <div className="flex flex-col rounded-[12px] border border-[#3A3835] bg-[#2A2927] p-2 focus-within:border-[#484542] transition-colors">
+            {/* Top row: Auto-growing Textarea */}
             <textarea
               ref={textareaRef}
               rows={1}
@@ -171,24 +169,38 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="Describe the video you want..."
-              className="flex-1 resize-none bg-transparent px-2.5 py-1.5 text-sm text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none max-h-[160px] leading-relaxed select-text"
+              className="w-full resize-none bg-transparent px-2.5 py-1.5 text-sm text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none max-h-[160px] leading-relaxed select-text"
               style={{ minHeight: '38px' }}
             />
 
-            {/* Orange Send Button */}
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!inputText.trim() || isStreaming}
-              aria-label="Send message"
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[8px] transition-colors ${
-                inputText.trim() && !isStreaming
-                  ? 'bg-[#D97757] text-white hover:bg-[#C5684A] cursor-pointer'
-                  : 'bg-[#3A3835] text-[#A8A59E]/40 cursor-not-allowed'
-              }`}
-            >
-              <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-            </button>
+            {/* Bottom row: Model chip bottom-left, Send button bottom-right */}
+            <div className="flex items-center justify-between pt-2 px-1">
+              <button
+                type="button"
+                onClick={onOpenModelPicker}
+                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#3A3835]/50 text-xs text-[#FAF9F5] transition cursor-pointer"
+              >
+                <ProviderLogo provider={selection.provider} className="w-3.5 h-3.5" />
+                <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">
+                  {selection.modelName}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#A8A59E]" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!inputText.trim() || isStreaming}
+                aria-label="Send message"
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] transition-colors ${
+                  inputText.trim() && !isStreaming
+                    ? 'bg-[#D97757] text-white hover:bg-[#C5684A] cursor-pointer'
+                    : 'bg-[#3A3835] text-[#A8A59E]/40 cursor-not-allowed'
+                }`}
+              >
+                <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            </div>
           </div>
 
           {/* Subtext info */}

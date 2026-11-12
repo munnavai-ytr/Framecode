@@ -1,3 +1,18 @@
+export type ProviderId = 'claude' | 'openrouter' | 'gemini';
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  provider?: ProviderId;
+  vision: boolean;
+  jsonMode?: boolean;
+}
+
+export interface ModelSelection {
+  provider: ProviderId;
+  modelId: string;
+  modelName: string;
+}
 
 export interface TaskRow {
   id: string;
@@ -64,7 +79,8 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  timestamp: string;
+  timestamp: string; // ISO string
+  action?: 'open-settings';
   tasks?: TaskRow[];
   video?: VideoProject | null;
   isStreaming?: boolean;
@@ -73,10 +89,11 @@ export interface ChatMessage {
 export interface ChatSession {
   id: string;
   title: string;
-  timestamp: string;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+  timestamp?: string;
   messages: ChatMessage[];
   terminalLines: TerminalLine[];
   video: VideoProject | null;
   latestCode?: string;
 }
-

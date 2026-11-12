@@ -2,6 +2,7 @@ import React from 'react';
 import * as Remotion from 'remotion';
 import * as RemotionMedia from '@remotion/media';
 import { transform } from 'sucrase';
+import { scanCode } from './codeGuard';
 
 export interface CompilationResult {
   component: React.ComponentType | null;
@@ -25,6 +26,26 @@ export function cleanCodeString(code: string): string {
   return cleaned;
 }
 
+const SHADOWED_GLOBALS = [
+  'window',
+  'document',
+  'globalThis',
+  'self',
+  'top',
+  'parent',
+  'localStorage',
+  'sessionStorage',
+  'indexedDB',
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'EventSource',
+  'navigator',
+  'location',
+  'eval',
+  'Function',
+];
+
 /**
  * Compiles and evaluates Remotion TSX code in the browser sandbox.
  */
@@ -38,6 +59,15 @@ export function compileRemotionCode(rawCode: string): CompilationResult {
       jsxRuntime: 'classic',
       production: true,
     });
+
+    // Run security scan
+    const guardError = scanCode(transformed.code);
+    if (guardError) {
+      return {
+        component: null,
+        error: guardError,
+      };
+    }
 
     const customRequire = (name: string) => {
       if (name === 'react' || name === 'react/jsx-runtime') {
@@ -61,8 +91,7 @@ export function compileRemotionCode(rawCode: string): CompilationResult {
 
     const moduleObj = { exports: exportsObj };
 
-    // Execute in sandboxed Function scope with React and Remotion primitives
-    const runFunction = new Function(
+    const fnArgs = [
       'require',
       'exports',
       'module',
@@ -76,8 +105,14 @@ export function compileRemotionCode(rawCode: string): CompilationResult {
       'Sequence',
       'AbsoluteFill',
       'Img',
-      transformed.code
-    );
+      ...SHADOWED_GLOBALS,
+      `'use strict';\n${transformed.code}`,
+    ];
+
+    // Execute in sandboxed Function scope with React and Remotion primitives
+    const runFunction = new Function(...fnArgs);
+
+    const shadowValues = SHADOWED_GLOBALS.map(() => undefined);
 
     runFunction(
       customRequire,
@@ -92,7 +127,8 @@ export function compileRemotionCode(rawCode: string): CompilationResult {
       Remotion.interpolate,
       Remotion.Sequence,
       Remotion.AbsoluteFill,
-      Remotion.Img
+      Remotion.Img,
+      ...shadowValues
     );
 
     // Look for exported component

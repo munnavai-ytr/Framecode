@@ -8,15 +8,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  // Allow access to remote image placeholder and stock assets.
+  // Allow access to stock assets.
   images: {
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'picsum.photos',
-        port: '',
-        pathname: '/**',
-      },
       {
         protocol: 'https',
         hostname: 'pixabay.com',
@@ -32,7 +26,7 @@ const nextConfig: NextConfig = {
     ],
   },
   output: 'standalone',
-  transpilePackages: ['motion', 'remotion', '@remotion/player', '@remotion/web-renderer', '@remotion/media'],
+  transpilePackages: ['remotion', '@remotion/player', '@remotion/web-renderer', '@remotion/media'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
     // Do not modify—file watching is disabled to prevent flickering during agent edits.
