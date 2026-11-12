@@ -1,5 +1,33 @@
 export type ProviderId = 'claude' | 'openrouter' | 'gemini';
 
+export type LibraryCategory = 'video' | 'image' | 'pdf' | 'document' | 'file';
+
+export interface LibraryItem {
+  id: string;
+  name: string;
+  category: LibraryCategory;
+  source: 'upload' | 'ai';
+  mime: string;
+  size: number;
+  createdAt: string; // ISO string
+  chatId?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  hasThumb: boolean;
+}
+
+export interface Attachment {
+  id: string; // library item id
+  name: string;
+  kind: 'image' | 'video' | 'other';
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
 export interface ModelOption {
   id: string;
   name: string;
@@ -81,6 +109,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string; // ISO string
   action?: 'open-settings';
+  attachments?: Attachment[];
   tasks?: TaskRow[];
   video?: VideoProject | null;
   isStreaming?: boolean;

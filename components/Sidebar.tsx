@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Plus, MessageSquare, X, Video, Settings } from 'lucide-react';
+import { Plus, MessageSquare, X, Video, Settings, FolderKanban } from 'lucide-react';
 import { ChatSession } from '@/types/framecode';
 
 interface SidebarProps {
@@ -130,16 +130,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Bottom Footer: Settings Navigation */}
-      <div className="border-t border-[#3A3835] pt-3 px-1">
+      {/* Bottom Footer: Library & Settings Navigation Side-by-Side */}
+      <div className="border-t border-[#3A3835] pt-3 px-1 grid grid-cols-2 gap-2">
+        <Link
+          href="/library"
+          onClick={() => {
+            if (onCloseMobile) onCloseMobile();
+          }}
+          className="flex items-center justify-center space-x-1.5 px-2 py-2 rounded-lg border border-[#3A3835] bg-[#2A2927] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
+        >
+          <FolderKanban className="w-3.5 h-3.5 text-[#D97757]" />
+          <span>Library</span>
+        </Link>
         <Link
           href="/settings"
           onClick={() => {
             if (onCloseMobile) onCloseMobile();
           }}
-          className="flex items-center space-x-2.5 px-3 py-2 rounded-lg border border-[#3A3835] bg-[#2A2927] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
+          className="flex items-center justify-center space-x-1.5 px-2 py-2 rounded-lg border border-[#3A3835] bg-[#2A2927] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
         >
-          <Settings className="w-4 h-4 text-[#D97757]" />
+          <Settings className="w-3.5 h-3.5 text-[#A8A59E]" />
           <span>Settings</span>
         </Link>
       </div>

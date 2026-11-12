@@ -15,6 +15,8 @@ import {
   TerminalLine,
   VideoProject,
   ModelSelection,
+  Attachment,
+  LibraryItem,
 } from '@/types/framecode';
 import { compileRemotionCode } from '@/lib/codeCompiler';
 import {
@@ -22,10 +24,18 @@ import {
   captureStillsForReview,
   renderVideoToMp4,
 } from '@/lib/videoRenderer';
-import { prepareStockUrls } from '@/lib/stockUrls';
+import { loadChats, saveChat, addLibraryItem } from '@/lib/db';
+import {
+  categorize,
+  readMediaInfo,
+  makeThumb,
+  downscaleImageForVision,
+  formatFileSize,
+} from '@/lib/files';
+import { prepareCode } from '@/lib/assetTokens';
 
-const LOCAL_STORAGE_KEY = 'framecode_chats';
 const LOCAL_STORAGE_SELECTION_KEY = 'fc_selection';
+const LOCAL_STORAGE_LEGACY_CHATS_KEY = 'framecode_chats';
 
 const DEFAULT_SELECTION: ModelSelection = {
   provider: 'claude',
@@ -50,34 +60,64 @@ export default function FramecodePage() {
   const [isTerminalSheetOpenMobile, setIsTerminalSheetOpenMobile] = useState<boolean>(false);
 
   const isMountedRef = useRef<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const saveDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Read localStorage ONLY after mounting on the client to avoid SSR/hydration mismatch
+  // Read model selection & load chats from IndexedDB after mounting on client
   useEffect(() => {
     isMountedRef.current = true;
-    try {
-      const storedSelection = localStorage.getItem(LOCAL_STORAGE_SELECTION_KEY);
-      if (storedSelection) {
-        const parsed = JSON.parse(storedSelection);
-        if (parsed?.provider && parsed?.modelId && parsed?.modelName) {
-          setTimeout(() => {
-            setSelection(parsed);
-          }, 0);
-        }
-      }
+    let active = true;
 
-      const storedChats = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (storedChats) {
-        const parsed: ChatSession[] = JSON.parse(storedChats);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setTimeout(() => {
-            setPastChats(parsed);
-            setActiveChatId(parsed[0].id);
-          }, 0);
+    async function initStorage() {
+      try {
+        const storedSelection = localStorage.getItem(LOCAL_STORAGE_SELECTION_KEY);
+        if (storedSelection) {
+          const parsed = JSON.parse(storedSelection);
+          if (parsed?.provider && parsed?.modelId && parsed?.modelName) {
+            setSelection(parsed);
+          }
         }
+
+        // Check one-time migration from localStorage -> IndexedDB
+        const legacyChatsStr = localStorage.getItem(LOCAL_STORAGE_LEGACY_CHATS_KEY);
+        const isMigrated = localStorage.getItem('fc_chats_migrated');
+
+        if (legacyChatsStr && !isMigrated) {
+          try {
+            const legacyChats: ChatSession[] = JSON.parse(legacyChatsStr);
+            if (Array.isArray(legacyChats)) {
+              // Drop sample chats matching chat-1 through chat-5
+              const realChats = legacyChats.filter((c) => !/^chat-[1-5]$/.test(c.id));
+              for (const chat of realChats) {
+                await saveChat(chat);
+              }
+            }
+            localStorage.removeItem(LOCAL_STORAGE_LEGACY_CHATS_KEY);
+            localStorage.setItem('fc_chats_migrated', 'true');
+          } catch (mErr) {
+            console.warn('Migration warning:', mErr);
+          }
+        }
+
+        const chats = await loadChats();
+        if (!active) return;
+
+        if (chats && chats.length > 0) {
+          setPastChats(chats);
+          setActiveChatId(chats[0].id);
+        }
+        setIsLoaded(true);
+      } catch (e) {
+        console.warn('Error initializing storage on mount:', e);
+        if (active) setIsLoaded(true);
       }
-    } catch (e) {
-      console.warn('Error reading from localStorage on client mount:', e);
     }
+
+    initStorage();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Save selection changes
@@ -90,47 +130,30 @@ export default function FramecodePage() {
     }
   };
 
-  // Save past chats (clean stock fileUrls for hotlink compliance) to localStorage
+  // Debounced auto-save past chats to IndexedDB
   useEffect(() => {
-    if (!isMountedRef.current) return;
-    try {
-      const cleanForStorage = pastChats.map((chat) => ({
-        ...chat,
-        messages: chat.messages.map((m) => ({
-          ...m,
-          video: m.video
-            ? {
-                ...m.video,
-                mp4BlobUrl: null,
-                stockAssets: m.video.stockAssets
-                  ? m.video.stockAssets.map((asset) => ({
-                      ...asset,
-                      fileUrl: '',
-                      previewUrl: '',
-                    }))
-                  : [],
-              }
-            : null,
-        })),
-        video: chat.video
-          ? {
-              ...chat.video,
-              mp4BlobUrl: null,
-              stockAssets: chat.video.stockAssets
-                ? chat.video.stockAssets.map((asset) => ({
-                    ...asset,
-                    fileUrl: '',
-                    previewUrl: '',
-                  }))
-                : [],
-            }
-          : null,
-      }));
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleanForStorage));
-    } catch (e) {
-      console.warn('Could not save chats to localStorage:', e);
+    if (!isMountedRef.current || !isLoaded) return;
+
+    if (saveDebounceTimerRef.current) {
+      clearTimeout(saveDebounceTimerRef.current);
     }
-  }, [pastChats]);
+
+    saveDebounceTimerRef.current = setTimeout(async () => {
+      try {
+        for (const chat of pastChats) {
+          await saveChat(chat);
+        }
+      } catch (e) {
+        console.warn('Error saving chats to IndexedDB:', e);
+      }
+    }, 500);
+
+    return () => {
+      if (saveDebounceTimerRef.current) {
+        clearTimeout(saveDebounceTimerRef.current);
+      }
+    };
+  }, [pastChats, isLoaded]);
 
   // Active chat session state
   const activeChat = pastChats.find((c) => c.id === activeChatId) || null;
@@ -265,13 +288,13 @@ export default function FramecodePage() {
 
     setIsRenderingMp4(true);
     try {
-      const preparedCode = await prepareStockUrls(currentVideo.code);
+      const preparedCode = await prepareCode(currentVideo.code);
       const compileRes = compileRemotionCode(preparedCode);
       if (!compileRes.component) {
         throw new Error(compileRes.error || 'Failed to compile component');
       }
 
-      const { url } = await renderVideoToMp4(
+      const { blob, url } = await renderVideoToMp4(
         compileRes.component,
         currentVideo.videoConfig,
         (progress) => {
@@ -282,6 +305,34 @@ export default function FramecodePage() {
       );
 
       appendTerminalLog(targetChatId, '✓ Render completed successfully', 'success');
+
+      // Auto-save MP4 to Library
+      try {
+        const thumbBlob = await makeThumb(blob);
+        const videoAssetId = `asset-video-${Date.now()}`;
+        const titleStr = (currentVideo.title || 'framecode_export').toLowerCase().replace(/\s+/g, '_');
+        const item: LibraryItem = {
+          id: videoAssetId,
+          name: `${titleStr}.mp4`,
+          category: 'video',
+          source: 'ai',
+          mime: 'video/mp4',
+          size: blob.size,
+          createdAt: new Date().toISOString(),
+          chatId: targetChatId,
+          width: currentVideo.videoConfig?.width || 720,
+          height: currentVideo.videoConfig?.height || 1280,
+          duration: Math.round(
+            (currentVideo.videoConfig?.durationInFrames || 450) /
+              (currentVideo.videoConfig?.fps || 30)
+          ),
+          hasThumb: Boolean(thumbBlob),
+        };
+        await addLibraryItem(item, blob, thumbBlob);
+        appendTerminalLog(targetChatId, '[library] Saved video export to Library', 'dim');
+      } catch (libErr) {
+        console.warn('Could not save MP4 to library:', libErr);
+      }
 
       setPastChats((prev) =>
         prev.map((c) => {
@@ -313,18 +364,23 @@ export default function FramecodePage() {
     }
   };
 
-  const handleSendMessage = async (userText: string) => {
+  const handleSendMessage = async (userText: string, attachedFiles?: File[]) => {
     if (isStreaming) return;
 
     const nowIso = new Date().toISOString();
     let targetChatId = activeChatId;
     let targetChats = [...pastChats];
 
+    const displayTitle =
+      userText.length > 28
+        ? `${userText.slice(0, 28)}...`
+        : userText || (attachedFiles?.[0]?.name ? `Attachment: ${attachedFiles[0].name}` : 'New Project');
+
     if (!targetChatId) {
       targetChatId = `chat-${Date.now()}`;
       const newSession: ChatSession = {
         id: targetChatId,
-        title: userText.length > 28 ? `${userText.slice(0, 28)}...` : userText,
+        title: displayTitle,
         timestamp: 'Just now',
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -340,13 +396,79 @@ export default function FramecodePage() {
           return {
             ...c,
             updatedAt: nowIso,
-            title: c.title === 'New Video Project' || c.messages.length === 0
-              ? (userText.length > 28 ? `${userText.slice(0, 28)}...` : userText)
-              : c.title,
+            title:
+              c.title === 'New Video Project' || c.messages.length === 0
+                ? displayTitle
+                : c.title,
           };
         }
         return c;
       });
+    }
+
+    // Process attached files (save to Library DB & prepare Attachment metadata + vision images)
+    const processedAttachments: Attachment[] = [];
+    const visionImages: string[] = [];
+
+    if (attachedFiles && attachedFiles.length > 0) {
+      for (const file of attachedFiles) {
+        try {
+          const mediaInfo = await readMediaInfo(file);
+          const thumbBlob = await makeThumb(file);
+          const assetId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          const category = categorize(file.name, file.type);
+
+          const item: LibraryItem = {
+            id: assetId,
+            name: file.name,
+            category,
+            source: 'upload',
+            mime: file.type || 'application/octet-stream',
+            size: file.size,
+            createdAt: new Date().toISOString(),
+            chatId: targetChatId,
+            width: mediaInfo.width,
+            height: mediaInfo.height,
+            duration: mediaInfo.duration,
+            hasThumb: Boolean(thumbBlob),
+          };
+
+          await addLibraryItem(item, file, thumbBlob);
+
+          const attachmentKind: 'image' | 'video' | 'other' =
+            category === 'image' ? 'image' : category === 'video' ? 'video' : 'other';
+
+          processedAttachments.push({
+            id: assetId,
+            name: file.name,
+            kind: attachmentKind,
+            mime: file.type || 'application/octet-stream',
+            size: file.size,
+            width: mediaInfo.width,
+            height: mediaInfo.height,
+            duration: mediaInfo.duration,
+          });
+
+          appendTerminalLog(
+            targetChatId,
+            `$ upload ${file.name} (${formatFileSize(file.size)}) saved to Library`,
+            'command'
+          );
+
+          if (file.type.startsWith('image/')) {
+            try {
+              const b64 = await downscaleImageForVision(file);
+              if (b64) {
+                visionImages.push(b64);
+              }
+            } catch (vErr) {
+              console.warn('Failed to downscale image for vision:', vErr);
+            }
+          }
+        } catch (fErr) {
+          console.warn(`Error processing file ${file.name}:`, fErr);
+        }
+      }
     }
 
     const userMessage: ChatMessage = {
@@ -354,6 +476,7 @@ export default function FramecodePage() {
       role: 'user',
       content: userText,
       timestamp: nowIso,
+      attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
     };
 
     const assistantMsgId = `assistant-${Date.now()}`;
@@ -425,6 +548,8 @@ export default function FramecodePage() {
           model: selection.modelId,
           mode: 'plan',
           messages: allMessages,
+          attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
+          images: visionImages.length > 0 ? visionImages : undefined,
         }),
       });
 
@@ -447,6 +572,42 @@ export default function FramecodePage() {
         targetChatId,
         `[planner] Planned ${storyboard.length} scenes (${videoConfig.durationInFrames} frames @ ${videoConfig.fps}fps)`
       );
+
+      // Save Storyboard.md to Library
+      try {
+        const sbMarkdown = `# Storyboard: ${existingChat?.title || userText || 'Video Project'}
+Date: ${new Date().toLocaleString()}
+Duration: ${Math.round(videoConfig.durationInFrames / videoConfig.fps)}s (${videoConfig.durationInFrames} frames @ ${videoConfig.fps}fps)
+
+## Scenes
+${storyboard
+  .map(
+    (s: { sceneIndex: number; title?: string; durationInFrames: number; onScreenText: string; motionIdea: string; stockQuery?: string }) => `### Scene ${s.sceneIndex}: ${s.title || 'Untitled'}
+- Duration: ${s.durationInFrames} frames (${Math.round(s.durationInFrames / videoConfig.fps)}s)
+- On-Screen Text: "${s.onScreenText}"
+- Motion / Visual: ${s.motionIdea}
+${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
+  )
+  .join('\n\n')}
+`;
+        const sbBlob = new Blob([sbMarkdown], { type: 'text/markdown' });
+        const sbAssetId = `asset-sb-${Date.now()}`;
+        const sbItem: LibraryItem = {
+          id: sbAssetId,
+          name: `Storyboard.md`,
+          category: 'document',
+          source: 'ai',
+          mime: 'text/markdown',
+          size: sbBlob.size,
+          createdAt: new Date().toISOString(),
+          chatId: targetChatId,
+          hasThumb: false,
+        };
+        await addLibraryItem(sbItem, sbBlob);
+        appendTerminalLog(targetChatId, '[library] Saved Storyboard.md to Library', 'dim');
+      } catch (sbErr) {
+        console.warn('Could not save storyboard to library:', sbErr);
+      }
 
       const storyboardTask: TaskRow = {
         id: 'task-storyboard',
@@ -548,6 +709,7 @@ export default function FramecodePage() {
           mode: 'code',
           storyboard,
           stockAssets: collectedStockAssets,
+          attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
           previousCode,
           userPrompt: userText,
           videoConfig,
@@ -574,7 +736,7 @@ export default function FramecodePage() {
       appendTerminalLog(targetChatId, `[compiler] Compiling TypeScript JSX with Sucrase...`);
 
       // 4. BROWSER COMPILE & FIX LOOP
-      let preparedCode = await prepareStockUrls(currentCode);
+      let preparedCode = await prepareCode(currentCode);
       let compileTest = compileRemotionCode(preparedCode);
       let fixTries = 0;
 
@@ -608,13 +770,15 @@ export default function FramecodePage() {
             error: compileTest.error,
             storyboard,
             videoConfig,
+            stockAssets: collectedStockAssets,
+            attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
           }),
         });
 
         const fixData = await fixRes.json();
         if (fixData.code) {
           currentCode = fixData.code;
-          preparedCode = await prepareStockUrls(currentCode);
+          preparedCode = await prepareCode(currentCode);
           compileTest = compileRemotionCode(preparedCode);
           appendTerminalLog(
             targetChatId,
@@ -664,6 +828,27 @@ export default function FramecodePage() {
       }
 
       appendTerminalLog(targetChatId, `✓ Sandboxed compilation succeeded`, 'success');
+
+      // Auto-save Composition.tsx to Library
+      try {
+        const codeBlob = new Blob([currentCode], { type: 'text/typescript' });
+        const codeAssetId = `asset-code-${Date.now()}`;
+        const codeItem: LibraryItem = {
+          id: codeAssetId,
+          name: `Composition.tsx`,
+          category: 'document',
+          source: 'ai',
+          mime: 'text/typescript',
+          size: codeBlob.size,
+          createdAt: new Date().toISOString(),
+          chatId: targetChatId,
+          hasThumb: false,
+        };
+        await addLibraryItem(codeItem, codeBlob);
+        appendTerminalLog(targetChatId, '[library] Saved Composition.tsx to Library', 'dim');
+      } catch (codeLibErr) {
+        console.warn('Could not save Composition.tsx to library:', codeLibErr);
+      }
 
       // 5. FRAME STILLS REVIEW
       const isVisionCapable =
@@ -727,12 +912,14 @@ export default function FramecodePage() {
                     issues: reviewData.issues,
                     storyboard,
                     videoConfig,
+                    stockAssets: collectedStockAssets,
+                    attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
                   }),
                 });
 
                 const fixReviewData = await fixReviewRes.json();
                 if (fixReviewData.code) {
-                  const recompiledPrep = await prepareStockUrls(fixReviewData.code);
+                  const recompiledPrep = await prepareCode(fixReviewData.code);
                   const recompiled = compileRemotionCode(recompiledPrep);
                   if (recompiled.component) {
                     currentCode = fixReviewData.code;
@@ -791,7 +978,7 @@ export default function FramecodePage() {
 
       const newVideoObj: VideoProject = {
         id: `vid-${Date.now()}`,
-        title: userText.length > 24 ? userText.slice(0, 24) : userText,
+        title: userText.length > 24 ? userText.slice(0, 24) : userText || 'Video Project',
         aspectRatio: '9:16',
         durationSec: Math.round(videoConfig.durationInFrames / videoConfig.fps),
         currentSec: 0,
@@ -850,7 +1037,7 @@ export default function FramecodePage() {
         throw new Error('Component is not compiled');
       }
 
-      const { url } = await renderVideoToMp4(
+      const { blob, url } = await renderVideoToMp4(
         compileTest.component,
         videoConfig,
         (progressPercent) => {
@@ -874,6 +1061,31 @@ export default function FramecodePage() {
       );
 
       appendTerminalLog(targetChatId, `✓ Successfully rendered MP4 to browser memory`, 'success');
+
+      // Save rendered MP4 to Library
+      try {
+        const thumbBlob = await makeThumb(blob);
+        const videoAssetId = `asset-video-${Date.now()}`;
+        const safeTitle = (userText || 'video').slice(0, 24).toLowerCase().replace(/\s+/g, '_');
+        const videoItem: LibraryItem = {
+          id: videoAssetId,
+          name: `${safeTitle}.mp4`,
+          category: 'video',
+          source: 'ai',
+          mime: 'video/mp4',
+          size: blob.size,
+          createdAt: new Date().toISOString(),
+          chatId: targetChatId,
+          width: videoConfig.width,
+          height: videoConfig.height,
+          duration: Math.round(videoConfig.durationInFrames / videoConfig.fps),
+          hasThumb: Boolean(thumbBlob),
+        };
+        await addLibraryItem(videoItem, blob, thumbBlob);
+        appendTerminalLog(targetChatId, '[library] Saved video export to Library', 'dim');
+      } catch (vidLibErr) {
+        console.warn('Could not save video to library:', vidLibErr);
+      }
 
       const finalizedVideo: VideoProject = {
         ...newVideoObj,
@@ -973,3 +1185,4 @@ export default function FramecodePage() {
     </div>
   );
 }
+

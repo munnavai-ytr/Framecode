@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Download, RotateCcw, Check, Film, Loader2 } from 'lucide-react';
 import { Player, PlayerRef } from '@remotion/player';
 import { VideoProject } from '@/types/framecode';
 import { compileRemotionCode } from '@/lib/codeCompiler';
+import { prepareCode } from '@/lib/assetTokens';
 
 interface VideoPlayerProps {
   video: VideoProject | null;
@@ -22,6 +23,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTimeSec, setCurrentTimeSec] = useState<number>(0);
   const [downloadSuccess, setDownloadSuccess] = useState<boolean>(false);
+  const [CompiledComponent, setCompiledComponent] = useState<React.ComponentType | null>(null);
+  const [compileError, setCompileError] = useState<string | null>(null);
 
   const playerRef = useRef<PlayerRef>(null);
   const videoElemRef = useRef<HTMLVideoElement>(null);
@@ -31,12 +34,36 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const durationInFrames = video?.videoConfig?.durationInFrames || durationSec * fps;
 
   const videoCode = video?.code;
-  // Compile TSX code in browser sandbox
-  const { component: CompiledComponent, error: compileError } = useMemo(() => {
-    if (!videoCode) return { component: null, error: null };
-    return compileRemotionCode(videoCode);
-  }, [videoCode]);
 
+  // Asynchronously resolve asset/stock tokens and compile TSX code in browser sandbox
+  useEffect(() => {
+    let active = true;
+    if (!videoCode) {
+      setTimeout(() => {
+        if (!active) return;
+        setCompiledComponent(null);
+        setCompileError(null);
+      }, 0);
+      return;
+    }
+
+    prepareCode(videoCode)
+      .then((prep) => {
+        if (!active) return;
+        const res = compileRemotionCode(prep);
+        setCompiledComponent(() => res.component);
+        setCompileError(res.error);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setCompiledComponent(null);
+        setCompileError(err instanceof Error ? err.message : String(err));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [videoCode]);
 
   // Track player frame updates
   useEffect(() => {

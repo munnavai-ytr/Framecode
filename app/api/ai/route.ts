@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getKey } from '@/lib/keyVault';
 import { generateJson } from '@/lib/providers';
 import { PLAN_SCHEMA, CODE_SCHEMA, FIX_SCHEMA, REVIEW_SCHEMA } from '@/lib/schemas';
-import { ProviderId } from '@/types/framecode';
+import { ProviderId, Attachment } from '@/types/framecode';
 
 export const runtime = 'nodejs';
 
@@ -15,8 +15,8 @@ Guidelines:
 - Reply in the user's language.
 - Defaults: vertical 9:16, width 720, height 1280, 30 fps, maximum 60 seconds (usually 10-30s is ideal). Use 1080x1920 only if explicitly requested.
 - Video Quality: One consistent color palette, high contrast, large readable typography with safe margins.
-- React/Remotion rules: Only standard HTML elements (div, span, img, svg, video), inline CSS styles or Tailwind classes, spring and interpolate easing, Sequence for scene timing. Import Video from '@remotion/media' or use <Video src="..." style={{ objectFit: 'cover', width: '100%', height: '100%' }} /> for video clips, and <Img src="..." /> for photos. No external font imports or network fetches inside the component code. Code must be self-contained and export a component named Composition or App.
-- Stock assets are Pixabay clips or photos. Pixabay videos are mostly landscape, so always set style={{ objectFit: 'cover', width: '100%', height: '100%' }} on <Video> or <Img> tags to fill the vertical 9:16 frame cleanly.`;
+- React/Remotion rules: Only standard HTML elements (div, span, img, svg, video), inline CSS styles or Tailwind classes, spring and interpolate easing, Sequence for scene timing. Import Video from '@remotion/media' for videos and Img for photos. Code must be self-contained and export a component named Composition or App.
+- IMPORTANT TOKEN ASSET RULES: Refer to a stock video ONLY as the exact string stock://video/<id>, a stock photo ONLY as stock://image/<id>, and an uploaded file ONLY as asset://<id>. Never write a real URL, blob: URL or data: URL. Always set style={{ objectFit: 'cover', width: '100%', height: '100%' }} on <Video> or <Img> tags to fill the frame cleanly.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,10 +47,27 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === 'plan') {
-      const { messages } = body;
+      const { messages, attachments, images } = body as {
+        messages: Array<{ role: string; content: string }>;
+        attachments?: Attachment[];
+        images?: string[];
+      };
+
       const conversationPrompt = Array.isArray(messages)
-        ? messages.map((m: { role: string; content: string }) => `${m.role}: ${m.content}`).join('\n')
+        ? messages.map((m) => `${m.role}: ${m.content}`).join('\n')
         : String(messages || '');
+
+      let attachmentInfo = '';
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        attachmentInfo = `\nUser Attached Files:\n${attachments
+          .map(
+            (a) =>
+              `- ${a.name} (id: ${a.id}, kind: ${a.kind}, mime: ${a.mime}, size: ${a.size} bytes${
+                a.width ? `, ${a.width}x${a.height}` : ''
+              }${a.duration ? `, duration: ${a.duration}s` : ''}) -> Reference token in code as asset://${a.id}`
+          )
+          .join('\n')}\n`;
+      }
 
       const prompt = `Based on the user request, plan a high-impact vertical video.
 Provide:
@@ -63,7 +80,7 @@ Provide:
    - onScreenText (key headline/hook text)
    - motionIdea (animation concept with spring/easing)
    - stockQuery (optional short search query for Pixabay stock video/photo if relevant, or empty string)
-
+${attachmentInfo}
 User Conversation:
 ${conversationPrompt}`;
 
@@ -73,6 +90,7 @@ ${conversationPrompt}`;
         model,
         system: SYSTEM_INSTRUCTION,
         prompt,
+        images: Array.isArray(images) ? images : undefined,
         schema: PLAN_SCHEMA,
       });
 
@@ -80,7 +98,30 @@ ${conversationPrompt}`;
     }
 
     if (mode === 'code') {
-      const { storyboard, stockAssets, previousCode, userPrompt, videoConfig } = body;
+      const { storyboard, stockAssets, attachments, previousCode, userPrompt, videoConfig } = body;
+
+      const sanitizeStockForPrompt = Array.isArray(stockAssets)
+        ? stockAssets.map((a) => ({
+            kind: a.type === 'photo' ? 'image' : 'video',
+            id: String(a.id),
+            token: `stock://${a.type === 'photo' ? 'image' : 'video'}/${a.id}`,
+            width: a.width,
+            height: a.height,
+            duration: a.duration,
+          }))
+        : [];
+
+      const sanitizeAttachmentsForPrompt = Array.isArray(attachments)
+        ? attachments.map((a: Attachment) => ({
+            id: a.id,
+            name: a.name,
+            kind: a.kind,
+            token: `asset://${a.id}`,
+            width: a.width,
+            height: a.height,
+            duration: a.duration,
+          }))
+        : [];
 
       const prompt = `Write ONE complete, self-contained Remotion React component in TypeScript (TSX).
 Requirements:
@@ -91,7 +132,9 @@ Requirements:
 - Use safe margins (at least 60px from top and bottom for vertical reels).
 - Make text punchy, bold, and modern.
 - For each scene in the storyboard, wrap it in a <Sequence from={startFrame} durationInFrames={sceneDuration}>.
-- Stock assets provided: ${JSON.stringify(stockAssets || [])}. If stock assets are provided, use their URLs via <Img src="..." /> for photos or <Video src="..." style={{ objectFit: 'cover', width: '100%', height: '100%' }} /> for videos.
+- ASSET TOKEN MANDATE: Refer to a stock video ONLY as stock://video/<id>, a stock photo ONLY as stock://image/<id>, and an uploaded file ONLY as asset://<id>. NEVER write a real URL, http URL, blob URL or data URL.
+- Available Stock Tokens: ${JSON.stringify(sanitizeStockForPrompt, null, 2)}
+- Available Uploaded Asset Tokens: ${JSON.stringify(sanitizeAttachmentsForPrompt, null, 2)}
 - Target config: width=${videoConfig?.width || 720}, height=${videoConfig?.height || 1280}, fps=${videoConfig?.fps || 30}, durationInFrames=${videoConfig?.durationInFrames || 450}.
 ${previousCode ? `Previous code to update/improve based on user request ("${userPrompt}"):\n${previousCode}` : ''}
 Storyboard:
@@ -112,15 +155,36 @@ Return JSON with 'code' containing the full valid TSX string, and 'videoConfig'.
     }
 
     if (mode === 'fix') {
-      const { code, error, issues, storyboard, videoConfig } = body;
+      const { code, error, issues, storyboard, videoConfig, stockAssets, attachments } = body;
+
+      const sanitizeStockForPrompt = Array.isArray(stockAssets)
+        ? stockAssets.map((a) => ({
+            token: `stock://${a.type === 'photo' ? 'image' : 'video'}/${a.id}`,
+            width: a.width,
+            height: a.height,
+            duration: a.duration,
+          }))
+        : [];
+
+      const sanitizeAttachmentsForPrompt = Array.isArray(attachments)
+        ? attachments.map((a: Attachment) => ({
+            token: `asset://${a.id}`,
+            name: a.name,
+            kind: a.kind,
+          }))
+        : [];
 
       const prompt = `Fix the Remotion React TSX code that produced errors or visual review issues.
 Error / Issues:
 ${error ? `Runtime / Compilation Error: ${error}\n` : ''}
 ${issues && issues.length ? `Visual review issues:\n- ${issues.join('\n- ')}\n` : ''}
 
-Original Code:
+Original Code (MUST preserve asset tokens like stock://... or asset://...):
 ${code}
+
+Available Asset Tokens:
+- Stock: ${JSON.stringify(sanitizeStockForPrompt)}
+- Uploads: ${JSON.stringify(sanitizeAttachmentsForPrompt)}
 
 Storyboard context:
 ${JSON.stringify(storyboard || [], null, 2)}
@@ -128,7 +192,7 @@ ${JSON.stringify(storyboard || [], null, 2)}
 Target Config:
 ${JSON.stringify(videoConfig || { width: 720, height: 1280, fps: 30, durationInFrames: 450 })}
 
-Return JSON with the full corrected 'code' and a brief 'fixSummary'.`;
+REMINDER: Never insert real URLs or blob URLs. Always keep asset tokens (stock://video/<id>, stock://image/<id>, asset://<id>). Return JSON with full corrected 'code' and 'fixSummary'.`;
 
       const result = await generateJson({
         provider,

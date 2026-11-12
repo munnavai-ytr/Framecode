@@ -62,12 +62,77 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
+    const kind = searchParams.get('kind'); // 'video' or 'image'
     const query = searchParams.get('q') || searchParams.get('query');
     const typeParam = searchParams.get('type'); // 'photo' or 'video'
 
-    // 1. Fetch single stock item by ID (GET /api/stock?id=...)
+    // 1. Fetch single stock item by ID (GET /api/stock?id=... or ?kind=video|image&id=...)
     if (id) {
-      // Try fetching as video hit first
+      if (kind === 'image') {
+        const photoRes = await fetch(
+          `https://pixabay.com/api/?key=${encodeURIComponent(pixabayKey)}&id=${encodeURIComponent(id)}`,
+          { next: { revalidate: 86400 } }
+        );
+
+        if (photoRes.ok) {
+          const pData = await photoRes.json();
+          if (Array.isArray(pData.hits) && pData.hits.length > 0) {
+            const pHit: PixabayPhotoHit = pData.hits[0];
+            const fileUrl = pHit.largeImageURL || pHit.webformatURL;
+            const resData = {
+              id: pHit.id,
+              type: 'photo',
+              previewUrl: pHit.webformatURL,
+              fileUrl,
+              width: pHit.imageWidth || 1280,
+              height: pHit.imageHeight || 720,
+            };
+            return NextResponse.json({
+              fileUrl,
+              width: resData.width,
+              height: resData.height,
+              result: resData,
+            });
+          }
+        }
+        return NextResponse.json({ error: 'Image asset not found' }, { status: 404 });
+      }
+
+      if (kind === 'video') {
+        const videoRes = await fetch(
+          `https://pixabay.com/api/videos/?key=${encodeURIComponent(pixabayKey)}&id=${encodeURIComponent(id)}`,
+          { next: { revalidate: 86400 } }
+        );
+
+        if (videoRes.ok) {
+          const vData = await videoRes.json();
+          if (Array.isArray(vData.hits) && vData.hits.length > 0) {
+            const hit: PixabayVideoHit = vData.hits[0];
+            const mediumFile = hit.videos?.medium || hit.videos?.small || hit.videos?.large;
+            if (mediumFile?.url) {
+              const resData = {
+                id: hit.id,
+                type: 'video',
+                previewUrl: getPreviewUrl(hit, mediumFile.url),
+                fileUrl: mediumFile.url,
+                duration: hit.duration,
+                width: mediumFile.width || 1280,
+                height: mediumFile.height || 720,
+              };
+              return NextResponse.json({
+                fileUrl: mediumFile.url,
+                width: resData.width,
+                height: resData.height,
+                duration: hit.duration,
+                result: resData,
+              });
+            }
+          }
+        }
+        return NextResponse.json({ error: 'Video asset not found' }, { status: 404 });
+      }
+
+      // Default try video first then photo if kind is not specified
       const videoRes = await fetch(
         `https://pixabay.com/api/videos/?key=${encodeURIComponent(pixabayKey)}&id=${encodeURIComponent(id)}`,
         { next: { revalidate: 86400 } }
@@ -79,22 +144,26 @@ export async function GET(req: NextRequest) {
           const hit: PixabayVideoHit = vData.hits[0];
           const mediumFile = hit.videos?.medium || hit.videos?.small || hit.videos?.large;
           if (mediumFile?.url) {
+            const resData = {
+              id: hit.id,
+              type: 'video',
+              previewUrl: getPreviewUrl(hit, mediumFile.url),
+              fileUrl: mediumFile.url,
+              duration: hit.duration,
+              width: mediumFile.width || 1280,
+              height: mediumFile.height || 720,
+            };
             return NextResponse.json({
-              result: {
-                id: hit.id,
-                type: 'video',
-                previewUrl: getPreviewUrl(hit, mediumFile.url),
-                fileUrl: mediumFile.url,
-                duration: hit.duration,
-                width: mediumFile.width || 1280,
-                height: mediumFile.height || 720,
-              },
+              fileUrl: mediumFile.url,
+              width: resData.width,
+              height: resData.height,
+              duration: hit.duration,
+              result: resData,
             });
           }
         }
       }
 
-      // Try fetching as photo hit
       const photoRes = await fetch(
         `https://pixabay.com/api/?key=${encodeURIComponent(pixabayKey)}&id=${encodeURIComponent(id)}`,
         { next: { revalidate: 86400 } }
@@ -104,15 +173,20 @@ export async function GET(req: NextRequest) {
         const pData = await photoRes.json();
         if (Array.isArray(pData.hits) && pData.hits.length > 0) {
           const pHit: PixabayPhotoHit = pData.hits[0];
+          const fileUrl = pHit.largeImageURL || pHit.webformatURL;
+          const resData = {
+            id: pHit.id,
+            type: 'photo',
+            previewUrl: pHit.webformatURL,
+            fileUrl,
+            width: pHit.imageWidth || 1280,
+            height: pHit.imageHeight || 720,
+          };
           return NextResponse.json({
-            result: {
-              id: pHit.id,
-              type: 'photo',
-              previewUrl: pHit.webformatURL,
-              fileUrl: pHit.largeImageURL || pHit.webformatURL,
-              width: pHit.imageWidth || 1280,
-              height: pHit.imageHeight || 720,
-            },
+            fileUrl,
+            width: resData.width,
+            height: resData.height,
+            result: resData,
           });
         }
       }
@@ -127,7 +201,6 @@ export async function GET(req: NextRequest) {
 
     const results: StockResult[] = [];
 
-    // If photo is requested specifically
     if (typeParam === 'photo') {
       const photoRes = await fetch(
         `https://pixabay.com/api/?key=${encodeURIComponent(pixabayKey)}&q=${encodeURIComponent(query)}&per_page=5`,
@@ -151,7 +224,6 @@ export async function GET(req: NextRequest) {
         }
       }
     } else {
-      // Default: fetch video hits from Pixabay
       const videoRes = await fetch(
         `https://pixabay.com/api/videos/?key=${encodeURIComponent(pixabayKey)}&q=${encodeURIComponent(query)}&per_page=5`,
         { next: { revalidate: 86400 } }
@@ -178,7 +250,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // If fewer than 2 videos found, supplement with Pixabay photos
       if (results.length < 2) {
         const photoRes = await fetch(
           `https://pixabay.com/api/?key=${encodeURIComponent(pixabayKey)}&q=${encodeURIComponent(query)}&per_page=5`,
