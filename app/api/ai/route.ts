@@ -21,10 +21,11 @@ Guidelines:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { provider, model, mode } = body as {
+    const { provider, model, mode, jsonMode } = body as {
       provider: ProviderId;
       model: string;
       mode: 'plan' | 'code' | 'fix' | 'review';
+      jsonMode?: boolean;
     };
 
     if (!provider || !['claude', 'openrouter', 'gemini'].includes(provider)) {
@@ -88,6 +89,7 @@ ${conversationPrompt}`;
         provider,
         apiKey,
         model,
+        jsonMode,
         system: SYSTEM_INSTRUCTION,
         prompt,
         images: Array.isArray(images) ? images : undefined,
@@ -146,6 +148,7 @@ Return JSON with 'code' containing the full valid TSX string, and 'videoConfig'.
         provider,
         apiKey,
         model,
+        jsonMode,
         system: SYSTEM_INSTRUCTION,
         prompt,
         schema: CODE_SCHEMA,
@@ -198,6 +201,7 @@ REMINDER: Never insert real URLs or blob URLs. Always keep asset tokens (stock:/
         provider,
         apiKey,
         model,
+        jsonMode,
         system: SYSTEM_INSTRUCTION,
         prompt,
         schema: FIX_SCHEMA,
@@ -228,6 +232,7 @@ Return JSON:
         provider,
         apiKey,
         model,
+        jsonMode,
         system: SYSTEM_INSTRUCTION,
         prompt,
         images: imageList,

@@ -37,17 +37,11 @@ import { prepareCode } from '@/lib/assetTokens';
 const LOCAL_STORAGE_SELECTION_KEY = 'fc_selection';
 const LOCAL_STORAGE_LEGACY_CHATS_KEY = 'framecode_chats';
 
-const DEFAULT_SELECTION: ModelSelection = {
-  provider: 'claude',
-  modelId: 'claude-3-7-sonnet-20250219',
-  modelName: 'Claude 3.7 Sonnet',
-};
-
 export default function FramecodePage() {
   const router = useRouter();
 
   // Deterministic initial state to guarantee matching server & client initial render
-  const [selection, setSelection] = useState<ModelSelection>(DEFAULT_SELECTION);
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
   const [pastChats, setPastChats] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
@@ -72,9 +66,23 @@ export default function FramecodePage() {
       try {
         const storedSelection = localStorage.getItem(LOCAL_STORAGE_SELECTION_KEY);
         if (storedSelection) {
-          const parsed = JSON.parse(storedSelection);
-          if (parsed?.provider && parsed?.modelId && parsed?.modelName) {
-            setSelection(parsed);
+          try {
+            const parsed = JSON.parse(storedSelection);
+            if (
+              parsed?.provider &&
+              ['claude', 'openrouter', 'gemini'].includes(parsed.provider) &&
+              parsed?.modelId &&
+              typeof parsed.modelId === 'string' &&
+              parsed?.modelName &&
+              typeof parsed.modelName === 'string' &&
+              typeof parsed.vision === 'boolean'
+            ) {
+              setSelection(parsed);
+            } else {
+              setSelection(null);
+            }
+          } catch {
+            setSelection(null);
           }
         }
 
@@ -205,7 +213,10 @@ export default function FramecodePage() {
         assetsToRefresh.map(async (asset) => {
           if (!asset.id) return asset;
           try {
-            const res = await fetch(`/api/stock?id=${encodeURIComponent(String(asset.id))}`);
+            const assetKind = asset.type === 'photo' ? 'image' : 'video';
+            const res = await fetch(
+              `/api/stock?kind=${encodeURIComponent(assetKind)}&id=${encodeURIComponent(String(asset.id))}`
+            );
             if (res.ok) {
               const data = await res.json();
               if (data.result?.fileUrl) {
@@ -261,7 +272,9 @@ export default function FramecodePage() {
       terminalLines: [
         {
           id: `init-${Date.now()}`,
-          text: `$ remotion environment ready (${selection.provider}/${selection.modelName})`,
+          text: selection
+            ? `$ remotion environment ready (${selection.provider}/${selection.modelName})`
+            : '$ remotion environment ready (no model selected)',
           type: 'command',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
@@ -406,6 +419,37 @@ export default function FramecodePage() {
       });
     }
 
+    if (!selection) {
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: userText,
+        timestamp: nowIso,
+      };
+
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: 'Choose a model and add your API key to start.',
+        timestamp: nowIso,
+        action: 'open-settings',
+      };
+
+      setPastChats(
+        targetChats.map((c) => {
+          if (c.id === targetChatId) {
+            return {
+              ...c,
+              updatedAt: nowIso,
+              messages: [...c.messages, userMessage, assistantMessage],
+            };
+          }
+          return c;
+        })
+      );
+      return;
+    }
+
     // Process attached files (save to Library DB & prepare Attachment metadata + vision images)
     const processedAttachments: Attachment[] = [];
     const visionImages: string[] = [];
@@ -546,6 +590,7 @@ export default function FramecodePage() {
         body: JSON.stringify({
           provider: selection.provider,
           model: selection.modelId,
+          jsonMode: selection.jsonMode,
           mode: 'plan',
           messages: allMessages,
           attachments: processedAttachments.length > 0 ? processedAttachments : undefined,
@@ -706,6 +751,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
         body: JSON.stringify({
           provider: selection.provider,
           model: selection.modelId,
+          jsonMode: selection.jsonMode,
           mode: 'code',
           storyboard,
           stockAssets: collectedStockAssets,
@@ -765,6 +811,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
           body: JSON.stringify({
             provider: selection.provider,
             model: selection.modelId,
+            jsonMode: selection.jsonMode,
             mode: 'fix',
             code: currentCode,
             error: compileTest.error,
@@ -851,14 +898,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
       }
 
       // 5. FRAME STILLS REVIEW
-      const isVisionCapable =
-        selection.modelId.includes('vision') ||
-        selection.modelId.includes('sonnet') ||
-        selection.modelId.includes('flash') ||
-        selection.modelId.includes('pro') ||
-        selection.provider === 'gemini';
-
-      if (isVisionCapable) {
+      if (selection.vision) {
         appendTerminalLog(targetChatId, `$ remotion render-still-on-web (frames 10%, 50%, 90%)`, 'command');
         const reviewTask: TaskRow = {
           id: 'task-review',
@@ -882,6 +922,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
               body: JSON.stringify({
                 provider: selection.provider,
                 model: selection.modelId,
+                jsonMode: selection.jsonMode,
                 mode: 'review',
                 code: currentCode,
                 images: stillsBase64,
@@ -907,6 +948,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
                   body: JSON.stringify({
                     provider: selection.provider,
                     model: selection.modelId,
+                    jsonMode: selection.jsonMode,
                     mode: 'fix',
                     code: currentCode,
                     issues: reviewData.issues,

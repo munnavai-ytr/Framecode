@@ -57,6 +57,15 @@ function mapStatusToError(status: number, providerName: string, rawText?: string
   return (rawText || `HTTP ${status} error from ${providerName}`).slice(0, 300);
 }
 
+export class ProviderError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ProviderError';
+    this.status = status;
+  }
+}
+
 // -------------------------------------------------------------
 // VERIFY AND LIST MODELS
 // -------------------------------------------------------------
@@ -79,7 +88,7 @@ export async function verifyAndListModels(
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        throw new Error(mapStatusToError(res.status, providerName, errText));
+        throw new ProviderError(mapStatusToError(res.status, providerName, errText), res.status);
       }
 
       const data = await res.json();
@@ -94,6 +103,7 @@ export async function verifyAndListModels(
             models.push({
               id,
               name: m.displayName || id,
+              provider: 'gemini',
               vision: true,
             });
           }
@@ -113,7 +123,7 @@ export async function verifyAndListModels(
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        throw new Error(mapStatusToError(res.status, providerName, errText));
+        throw new ProviderError(mapStatusToError(res.status, providerName, errText), res.status);
       }
 
       const data = await res.json();
@@ -124,6 +134,7 @@ export async function verifyAndListModels(
           models.push({
             id: m.id,
             name: m.display_name || m.id,
+            provider: 'claude',
             vision: true,
           });
         }
@@ -140,7 +151,7 @@ export async function verifyAndListModels(
 
       if (!keyRes.ok) {
         const errText = await keyRes.text().catch(() => '');
-        throw new Error(mapStatusToError(keyRes.status, providerName, errText));
+        throw new ProviderError(mapStatusToError(keyRes.status, providerName, errText), keyRes.status);
       }
 
       // Then fetch models list
@@ -150,7 +161,7 @@ export async function verifyAndListModels(
 
       if (!modelsRes.ok) {
         const errText = await modelsRes.text().catch(() => '');
-        throw new Error(mapStatusToError(modelsRes.status, providerName, errText));
+        throw new ProviderError(mapStatusToError(modelsRes.status, providerName, errText), modelsRes.status);
       }
 
       const data = await modelsRes.json();
@@ -166,6 +177,7 @@ export async function verifyAndListModels(
             models.push({
               id: m.id,
               name: m.name || m.id,
+              provider: 'openrouter',
               vision: inputMods?.includes('image') ?? false,
               jsonMode: params?.includes('response_format') ?? false,
             });
@@ -177,13 +189,14 @@ export async function verifyAndListModels(
       return models;
     }
 
-    throw new Error(`Unsupported provider "${provider}"`);
+    throw new ProviderError(`Unsupported provider "${provider}"`, 400);
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new Error('The model took too long to respond.');
+      throw new ProviderError('The model took too long to respond.', 504);
     }
+    const status = (err as { status?: number })?.status || 502;
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(sanitizeErrorMessage(msg, apiKey, provider));
+    throw new ProviderError(sanitizeErrorMessage(msg, apiKey, provider), status);
   }
 }
 

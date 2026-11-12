@@ -27,7 +27,7 @@ interface ChatAreaProps {
   isStreaming: boolean;
   onRenderAndDownload?: () => void;
   isRenderingMp4?: boolean;
-  selection: ModelSelection;
+  selection: ModelSelection | null;
   onOpenModelPicker: () => void;
   onOpenSettings: () => void;
 }
@@ -356,10 +356,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   onClick={onOpenModelPicker}
                   className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#3A3835]/50 text-xs text-[#FAF9F5] transition cursor-pointer"
                 >
-                  <ProviderLogo provider={selection.provider} className="w-3.5 h-3.5" />
-                  <span className="font-medium truncate max-w-[120px] sm:max-w-[180px]">
-                    {selection.modelName}
-                  </span>
+                  {selection ? (
+                    <>
+                      <ProviderLogo provider={selection.provider} className="w-3.5 h-3.5" />
+                      <span className="font-medium truncate max-w-[120px] sm:max-w-[180px]">
+                        {selection.modelName}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-medium text-[#A8A59E]">Select model</span>
+                  )}
                   <ChevronDown className="w-3.5 h-3.5 text-[#A8A59E]" />
                 </button>
               </div>

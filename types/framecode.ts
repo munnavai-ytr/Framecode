@@ -40,6 +40,8 @@ export interface ModelSelection {
   provider: ProviderId;
   modelId: string;
   modelName: string;
+  vision: boolean;
+  jsonMode?: boolean;
 }
 
 export interface TaskRow {

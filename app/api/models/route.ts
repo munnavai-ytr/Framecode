@@ -1,67 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readKeys } from '@/lib/keyVault';
+import { getKey } from '@/lib/keyVault';
 import { verifyAndListModels } from '@/lib/providers';
-import { ModelOption, ProviderId } from '@/types/framecode';
+import { ProviderId } from '@/types/framecode';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-const DEFAULT_MODELS: Record<ProviderId, ModelOption[]> = {
-  claude: [
-    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet', provider: 'claude', vision: true },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', provider: 'claude', vision: false },
-  ],
-  gemini: [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'gemini', vision: true },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'gemini', vision: true },
-  ],
-  openrouter: [
-    { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', provider: 'openrouter', vision: true },
-    { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'openrouter', vision: true },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', provider: 'openrouter', vision: false },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', provider: 'openrouter', vision: false },
-  ],
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store',
 };
 
 export async function GET(req: NextRequest) {
   try {
-    const keys = await readKeys();
     const url = new URL(req.url);
-    const requestedProvider = url.searchParams.get('provider') as ProviderId | null;
+    const providerParam = url.searchParams.get('provider');
 
-    const providers: ProviderId[] = requestedProvider
-      ? [requestedProvider]
-      : ['claude', 'openrouter', 'gemini'];
-
-    let allModels: ModelOption[] = [];
-
-    for (const p of providers) {
-      const apiKey = keys[p];
-      if (apiKey) {
-        try {
-          const fetched = await verifyAndListModels(p, apiKey);
-          if (fetched && fetched.length > 0) {
-            allModels = allModels.concat(fetched);
-          } else {
-            allModels = allModels.concat(DEFAULT_MODELS[p]);
-          }
-        } catch {
-          allModels = allModels.concat(DEFAULT_MODELS[p]);
-        }
-      } else {
-        allModels = allModels.concat(DEFAULT_MODELS[p]);
-      }
+    if (!providerParam || !['claude', 'openrouter', 'gemini'].includes(providerParam)) {
+      return NextResponse.json(
+        { error: 'Invalid provider' },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
     }
 
-    return NextResponse.json({
-      models: allModels,
-      configured: {
-        claude: Boolean(keys.claude),
-        openrouter: Boolean(keys.openrouter),
-        gemini: Boolean(keys.gemini),
-      },
-    });
+    const provider = providerParam as ProviderId;
+    const apiKey = await getKey(provider);
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'NO_API_KEY' },
+        { status: 401, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    try {
+      const rawModels = await verifyAndListModels(provider, apiKey);
+      const models = rawModels.map((m) => ({ ...m, provider }));
+      return NextResponse.json(
+        { models },
+        { status: 200, headers: NO_STORE_HEADERS }
+      );
+    } catch (err: unknown) {
+      const rawStatus = (err as { status?: number })?.status;
+      let status = 502;
+      if (rawStatus === 401 || rawStatus === 403) {
+        status = 401;
+      } else if (rawStatus === 429) {
+        status = 429;
+      }
+      const message = err instanceof Error ? err.message : 'Failed to fetch models';
+      return NextResponse.json(
+        { error: message },
+        { status, headers: NO_STORE_HEADERS }
+      );
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch models';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 502, headers: NO_STORE_HEADERS }
+    );
   }
 }
