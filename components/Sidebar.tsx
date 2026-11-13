@@ -12,15 +12,17 @@ interface SidebarProps {
   onNewChat: () => void;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
+  onNavigate?: (href: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+const SidebarInner: React.FC<SidebarProps> = ({
   pastChats,
   activeChatId,
   onSelectChat,
   onNewChat,
   isOpenMobile = false,
   onCloseMobile,
+  onNavigate,
 }) => {
   // Sort chats by updatedAt descending
   const sortedChats = [...pastChats].sort((a, b) => {
@@ -43,6 +45,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
     }
     return chat.timestamp || '';
+  };
+
+  const handleNavClick = (e: React.MouseEvent, href: string) => {
+    if (onCloseMobile) onCloseMobile();
+    if (onNavigate) {
+      e.preventDefault();
+      onNavigate(href);
+    }
   };
 
   const content = (
@@ -134,9 +144,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="border-t border-[#3A3835] pt-3 px-1 grid grid-cols-2 gap-2">
         <Link
           href="/library"
-          onClick={() => {
-            if (onCloseMobile) onCloseMobile();
-          }}
+          prefetch
+          onClick={(e) => handleNavClick(e, '/library')}
           className="flex items-center justify-center space-x-1.5 px-2 py-2 rounded-lg border border-[#3A3835] bg-[#2A2927] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
         >
           <FolderKanban className="w-3.5 h-3.5 text-[#D97757]" />
@@ -144,9 +153,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </Link>
         <Link
           href="/settings"
-          onClick={() => {
-            if (onCloseMobile) onCloseMobile();
-          }}
+          prefetch
+          onClick={(e) => handleNavClick(e, '/settings')}
           className="flex items-center justify-center space-x-1.5 px-2 py-2 rounded-lg border border-[#3A3835] bg-[#2A2927] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
         >
           <Settings className="w-3.5 h-3.5 text-[#A8A59E]" />
@@ -180,3 +188,5 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+
+export const Sidebar = React.memo(SidebarInner);

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { AppProviders } from '@/components/AppProviders';
 
 export const metadata: Metadata = {
   title: 'Framecode - AI Video from Code',
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body suppressHydrationWarning className="bg-[#1F1E1D] text-[#FAF9F5] antialiased">
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

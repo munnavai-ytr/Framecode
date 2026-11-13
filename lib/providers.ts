@@ -11,7 +11,19 @@ export interface GenerateJsonOptions {
   images?: string[]; // base64 strings
   schema: Record<string, unknown>;
   jsonMode?: boolean;
+  signal?: AbortSignal;
 }
+
+export interface GenerateImageOptions {
+  provider: ProviderId;
+  model: string;
+  apiKey: string;
+  prompt: string;
+  aspectRatio?: string;
+  signal?: AbortSignal;
+}
+
+const MAX_IMAGE_BASE64_LEN = 4_000_000;
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
   claude: 'Claude',
@@ -30,7 +42,7 @@ function cleanBase64(b64: string): string {
   return b64;
 }
 
-function sanitizeErrorMessage(msg: string, apiKey: string, provider: ProviderId): string {
+function sanitizeErrorMessage(msg: string, apiKey: string): string {
   let cleaned = msg || 'An unknown error occurred.';
   if (apiKey) {
     cleaned = cleaned.replaceAll(apiKey, '[REDACTED]');
@@ -55,6 +67,38 @@ function mapStatusToError(status: number, providerName: string, rawText?: string
     return `This model is not available for your key. Pick another model.`;
   }
   return (rawText || `HTTP ${status} error from ${providerName}`).slice(0, 300);
+}
+
+function createCombinedSignal(userSignal?: AbortSignal, timeoutMs = 55000): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+  }, timeoutMs);
+
+  const onUserAbort = () => {
+    controller.abort(userSignal?.reason || new DOMException('Aborted', 'AbortError'));
+  };
+
+  if (userSignal) {
+    if (userSignal.aborted) {
+      onUserAbort();
+    } else {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+    },
+  };
 }
 
 export class ProviderError extends Error {
@@ -105,6 +149,7 @@ export async function verifyAndListModels(
               name: m.displayName || id,
               provider: 'gemini',
               vision: true,
+              imageOutput: id.toLowerCase().includes('image'),
             });
           }
         }
@@ -154,10 +199,13 @@ export async function verifyAndListModels(
         throw new ProviderError(mapStatusToError(keyRes.status, providerName, errText), keyRes.status);
       }
 
-      // Then fetch models list
-      const modelsRes = await fetch('https://openrouter.ai/api/v1/models', {
-        signal: timeoutSignal,
-      });
+      // Fetch text models and image-output models in parallel
+      const [modelsRes, imageModelsRes] = await Promise.all([
+        fetch('https://openrouter.ai/api/v1/models', { signal: timeoutSignal }),
+        fetch('https://openrouter.ai/api/v1/models?output_modalities=image', {
+          signal: timeoutSignal,
+        }).catch(() => null),
+      ]);
 
       if (!modelsRes.ok) {
         const errText = await modelsRes.text().catch(() => '');
@@ -165,7 +213,20 @@ export async function verifyAndListModels(
       }
 
       const data = await modelsRes.json();
-      const models: ModelOption[] = [];
+      const imageData = imageModelsRes && imageModelsRes.ok ? await imageModelsRes.json().catch(() => null) : null;
+
+      const imageModelIds = new Set<string>();
+      const imageModelsRaw: Array<Record<string, unknown>> = [];
+      if (imageData && Array.isArray(imageData.data)) {
+        for (const m of imageData.data) {
+          if (m && typeof m.id === 'string') {
+            imageModelIds.add(m.id);
+            imageModelsRaw.push(m);
+          }
+        }
+      }
+
+      const byId = new Map<string, ModelOption>();
 
       if (Array.isArray(data.data)) {
         for (const m of data.data) {
@@ -173,18 +234,40 @@ export async function verifyAndListModels(
           const inputMods = m.architecture?.input_modalities as string[] | undefined;
           const params = m.supported_parameters as string[] | undefined;
 
-          if (!outputMods || outputMods.includes('text')) {
-            models.push({
+          const isImageOut = imageModelIds.has(m.id) || (outputMods?.includes('image') ?? false);
+          if (!outputMods || outputMods.includes('text') || isImageOut) {
+            byId.set(m.id, {
               id: m.id,
               name: m.name || m.id,
               provider: 'openrouter',
               vision: inputMods?.includes('image') ?? false,
               jsonMode: params?.includes('response_format') ?? false,
+              imageOutput: isImageOut,
             });
           }
         }
       }
 
+      for (const m of imageModelsRaw) {
+        const id = m.id as string;
+        const existing = byId.get(id);
+        if (existing) {
+          existing.imageOutput = true;
+        } else {
+          const arch = m.architecture as { input_modalities?: string[] } | undefined;
+          const params = m.supported_parameters as string[] | undefined;
+          byId.set(id, {
+            id,
+            name: (typeof m.name === 'string' && m.name) || id,
+            provider: 'openrouter',
+            vision: arch?.input_modalities?.includes('image') ?? false,
+            jsonMode: params?.includes('response_format') ?? false,
+            imageOutput: true,
+          });
+        }
+      }
+
+      const models = Array.from(byId.values());
       models.sort((a, b) => a.name.localeCompare(b.name));
       return models;
     }
@@ -196,7 +279,7 @@ export async function verifyAndListModels(
     }
     const status = (err as { status?: number })?.status || 502;
     const msg = err instanceof Error ? err.message : String(err);
-    throw new ProviderError(sanitizeErrorMessage(msg, apiKey, provider), status);
+    throw new ProviderError(sanitizeErrorMessage(msg, apiKey), status);
   }
 }
 
@@ -204,8 +287,9 @@ export async function verifyAndListModels(
 // GENERATE JSON COMMON ADAPTER
 // -------------------------------------------------------------
 export async function generateJson(options: GenerateJsonOptions): Promise<Record<string, unknown>> {
-  const { provider, model, apiKey, system, prompt, images, schema, jsonMode } = options;
+  const { provider, model, apiKey, system, prompt, images, schema, jsonMode, signal } = options;
   const providerName = formatProviderName(provider);
+  const { signal: combinedSignal, cleanup } = createCombinedSignal(signal, 55000);
 
   try {
     if (provider === 'gemini') {
@@ -238,6 +322,7 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
           systemInstruction: system,
           responseMimeType: 'application/json',
           responseSchema: geminiSchema,
+          abortSignal: combinedSignal,
         },
       });
 
@@ -272,7 +357,7 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json',
         },
-        signal: AbortSignal.timeout(55000),
+        signal: combinedSignal,
         body: JSON.stringify({
           model,
           max_tokens: 8192,
@@ -291,7 +376,7 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        throw new Error(mapStatusToError(res.status, providerName, errText));
+        throw new ProviderError(mapStatusToError(res.status, providerName, errText), res.status);
       }
 
       const data = await res.json();
@@ -345,7 +430,7 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
             'Content-Type': 'application/json',
             'X-Title': 'Framecode',
           },
-          signal: AbortSignal.timeout(55000),
+          signal: combinedSignal,
           body: JSON.stringify({
             ...requestBody,
             messages: msgList,
@@ -354,7 +439,7 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
 
         if (!res.ok) {
           const errText = await res.text().catch(() => '');
-          throw new Error(mapStatusToError(res.status, providerName, errText));
+          throw new ProviderError(mapStatusToError(res.status, providerName, errText), res.status);
         }
 
         const data = await res.json();
@@ -416,12 +501,215 @@ export async function generateJson(options: GenerateJsonOptions): Promise<Record
       throw new Error('The model did not return valid JSON. Try another model.');
     }
 
-    throw new Error(`Unsupported provider "${provider}"`);
+    throw new ProviderError(`Unsupported provider "${provider}"`, 400);
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new Error('The model took too long to respond.');
+      throw new ProviderError('The model took too long to respond. Try again or pick another model.', 504);
     }
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
+    const status = (err as { status?: number })?.status || 500;
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(sanitizeErrorMessage(msg, apiKey, provider));
+    throw new ProviderError(sanitizeErrorMessage(msg, apiKey), status);
+  } finally {
+    cleanup();
+  }
+}
+
+// -------------------------------------------------------------
+// GENERATE IMAGE ADAPTER
+// -------------------------------------------------------------
+export async function generateImage(
+  options: GenerateImageOptions
+): Promise<{ mime: string; data: string }> {
+  const { provider, model, apiKey, prompt, aspectRatio = '1:1', signal } = options;
+
+  if (provider === 'claude') {
+    throw new ProviderError('Claude cannot create images.', 400);
+  }
+
+  const providerName = formatProviderName(provider);
+  const { signal: combinedSignal, cleanup } = createCombinedSignal(signal, 55000);
+
+  try {
+    if (provider === 'gemini') {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+      const callGeminiImage = async (generationConfig: Record<string, unknown>) => {
+        return fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          signal: combinedSignal,
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig,
+          }),
+        });
+      };
+
+      let res = await callGeminiImage({
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio, imageSize: '1K' },
+      });
+
+      if (res.status === 400) {
+        res = await callGeminiImage({
+          responseModalities: ['TEXT', 'IMAGE'],
+        });
+      }
+
+      if (res.status === 400) {
+        res = await callGeminiImage({
+          responseModalities: ['IMAGE'],
+        });
+      }
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new ProviderError(mapStatusToError(res.status, providerName, errText), res.status);
+      }
+
+      const data = await res.json();
+      const parts = (data.candidates?.[0]?.content?.parts || []) as Array<{
+        thought?: boolean;
+        inlineData?: { mimeType?: string; data?: string };
+      }>;
+
+      let chosen: { mimeType?: string; data?: string } | null = null;
+      for (const part of parts) {
+        if (part.thought === true) continue;
+        if (part.inlineData?.data) {
+          chosen = part.inlineData;
+        }
+      }
+
+      if (!chosen?.data) {
+        throw new ProviderError('Gemini did not return an image. Try another model.', 502);
+      }
+
+      if (chosen.data.length > MAX_IMAGE_BASE64_LEN) {
+        throw new ProviderError(
+          'The image is too large to return from the server. Try a smaller aspect ratio or another model.',
+          413
+        );
+      }
+
+      return {
+        mime: chosen.mimeType || 'image/png',
+        data: chosen.data,
+      };
+    }
+
+    if (provider === 'openrouter') {
+      const headers = {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'X-Title': 'Framecode',
+      };
+
+      const imagesRes = await fetch('https://openrouter.ai/api/v1/images', {
+        method: 'POST',
+        headers,
+        signal: combinedSignal,
+        body: JSON.stringify({
+          model,
+          prompt,
+        }),
+      });
+
+      if (imagesRes.ok) {
+        const imgJson = await imagesRes.json();
+        const b64 = imgJson?.data?.[0]?.b64_json as string | undefined;
+        if (b64) {
+          if (b64.length > MAX_IMAGE_BASE64_LEN) {
+            throw new ProviderError(
+              'The image is too large to return from the server. Try a smaller aspect ratio or another model.',
+              413
+            );
+          }
+          return { mime: 'image/png', data: b64 };
+        }
+      } else if (imagesRes.status !== 404 && imagesRes.status !== 405) {
+        const errText = await imagesRes.text().catch(() => '');
+        throw new ProviderError(
+          mapStatusToError(imagesRes.status, providerName, errText),
+          imagesRes.status
+        );
+      }
+
+      const callChatImage = async (modalities: string[]) => {
+        return fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers,
+          signal: combinedSignal,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            modalities,
+          }),
+        });
+      };
+
+      let chatRes = await callChatImage(['image', 'text']);
+      if (!chatRes.ok && (chatRes.status === 400 || chatRes.status === 422)) {
+        chatRes = await callChatImage(['image']);
+      }
+
+      if (!chatRes.ok) {
+        const errText = await chatRes.text().catch(() => '');
+        throw new ProviderError(
+          mapStatusToError(chatRes.status, providerName, errText),
+          chatRes.status
+        );
+      }
+
+      const chatJson = await chatRes.json();
+      const imageUrl = chatJson?.choices?.[0]?.message?.images?.[0]?.image_url?.url as
+        | string
+        | undefined;
+
+      if (!imageUrl) {
+        throw new ProviderError('OpenRouter did not return an image. Try another model.', 502);
+      }
+
+      if (imageUrl.startsWith('data:')) {
+        const match = /^data:([^;]+);base64,(.+)$/.exec(imageUrl);
+        if (!match) {
+          throw new ProviderError('Unsupported image format returned by OpenRouter.', 502);
+        }
+        const mime = match[1];
+        const b64 = match[2];
+        if (b64.length > MAX_IMAGE_BASE64_LEN) {
+          throw new ProviderError(
+            'The image is too large to return from the server. Try a smaller aspect ratio or another model.',
+            413
+          );
+        }
+        return { mime, data: b64 };
+      }
+
+      throw new ProviderError('OpenRouter returned an external image URL instead of base64 data.', 502);
+    }
+
+    throw new ProviderError(`Unsupported provider "${provider}"`, 400);
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new ProviderError(
+        'The model took too long to respond. Try again or pick another model.',
+        504
+      );
+    }
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
+    const status = (err as { status?: number })?.status || 500;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ProviderError(sanitizeErrorMessage(msg, apiKey), status);
+  } finally {
+    cleanup();
   }
 }

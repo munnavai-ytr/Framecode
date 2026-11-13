@@ -34,6 +34,7 @@ export interface ModelOption {
   provider?: ProviderId;
   vision: boolean;
   jsonMode?: boolean;
+  imageOutput?: boolean;
 }
 
 export interface ModelSelection {
@@ -44,10 +45,16 @@ export interface ModelSelection {
   jsonMode?: boolean;
 }
 
+export interface ImageSelection {
+  provider: ProviderId;
+  modelId: string;
+  modelName: string;
+}
+
 export interface TaskRow {
   id: string;
   label: string;
-  status: 'pending' | 'running' | 'done';
+  status: 'pending' | 'running' | 'done' | 'error';
   progress?: number; // 0 - 100
   detailTitle?: string;
   codeSnippet?: string;
@@ -105,6 +112,23 @@ export interface TerminalLine {
   timestamp?: string;
 }
 
+export interface Memory {
+  id: string;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+  source: 'user' | 'ai';
+  chatId?: string;
+}
+
+export interface MemoryOp {
+  op: 'add' | 'update' | 'delete';
+  id?: string;
+  text?: string;
+}
+
+export type KeyStatusMap = Record<ProviderId, { connected: boolean; last4: string | null }>;
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -114,6 +138,8 @@ export interface ChatMessage {
   attachments?: Attachment[];
   tasks?: TaskRow[];
   video?: VideoProject | null;
+  images?: { libraryId: string; name: string }[];
+  memoryUpdates?: string[];
   isStreaming?: boolean;
 }
 

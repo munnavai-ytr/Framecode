@@ -3,6 +3,10 @@ import { Type, Schema } from '@google/genai';
 export const PLAN_SCHEMA = {
   type: 'object',
   properties: {
+    intent: {
+      type: 'string',
+      enum: ['chat', 'video', 'image'],
+    },
     reply: { type: 'string' },
     videoConfig: {
       type: 'object',
@@ -29,8 +33,25 @@ export const PLAN_SCHEMA = {
         required: ['sceneIndex', 'title', 'durationInFrames', 'onScreenText', 'motionIdea'],
       },
     },
+    imagePrompt: { type: 'string' },
+    aspectRatio: {
+      type: 'string',
+      enum: ['1:1', '9:16', '16:9', '4:5', '3:4', '4:3'],
+    },
+    memoryOps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          op: { type: 'string', enum: ['add', 'update', 'delete'] },
+          id: { type: 'string' },
+          text: { type: 'string' },
+        },
+        required: ['op'],
+      },
+    },
   },
-  required: ['reply', 'videoConfig', 'storyboard'],
+  required: ['intent', 'reply'],
 };
 
 export const CODE_SCHEMA = {
@@ -104,6 +125,10 @@ export function jsonSchemaToGeminiSchema(jsonSchema: Record<string, unknown>): S
 
   if (jsonSchema.description && typeof jsonSchema.description === 'string') {
     result.description = jsonSchema.description;
+  }
+
+  if (Array.isArray(jsonSchema.enum)) {
+    result.enum = jsonSchema.enum as string[];
   }
 
   if (jsonSchema.properties && typeof jsonSchema.properties === 'object') {

@@ -9,7 +9,7 @@ interface TerminalProps {
   isStreaming?: boolean;
 }
 
-export const Terminal: React.FC<TerminalProps> = ({ lines, isStreaming = false }) => {
+const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) => {
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<boolean>(false);
@@ -111,3 +111,5 @@ export const Terminal: React.FC<TerminalProps> = ({ lines, isStreaming = false }
     </div>
   );
 };
+
+export const Terminal = React.memo(TerminalInner);

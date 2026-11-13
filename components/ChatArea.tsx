@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   ArrowUp,
+  Square,
   Sparkles,
   Settings,
   ChevronDown,
@@ -12,24 +15,29 @@ import {
   Film,
   File,
   AlertCircle,
+  Brain,
+  Download,
 } from 'lucide-react';
 import { ChatMessage, VideoProject, ModelSelection, Attachment } from '@/types/framecode';
 import { TaskRowItem } from './TaskRowItem';
 import { VideoPlayer } from './VideoPlayer';
 import { ProviderLogo } from './ProviderLogo';
 import { MAX_FILE_SIZE_BYTES, getFileTooLargeMessage, formatFileSize } from '@/lib/files';
-import { getThumb } from '@/lib/db';
+import { getThumb, getBlob } from '@/lib/db';
 
 interface ChatAreaProps {
   messages: ChatMessage[];
   currentVideo: VideoProject | null;
   onSendMessage: (text: string, files?: File[]) => void;
+  onStop: () => void;
   isStreaming: boolean;
   onRenderAndDownload?: () => void;
   isRenderingMp4?: boolean;
   selection: ModelSelection | null;
+  selectionLoaded?: boolean;
   onOpenModelPicker: () => void;
   onOpenSettings: () => void;
+  onNavigate?: (href: string) => void;
 }
 
 interface FileChipPreview {
@@ -37,20 +45,24 @@ interface FileChipPreview {
   previewUrl: string | null;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({
+const ChatAreaInner: React.FC<ChatAreaProps> = ({
   messages,
   currentVideo,
   onSendMessage,
+  onStop,
   isStreaming,
   onRenderAndDownload,
   isRenderingMp4 = false,
   selection,
+  selectionLoaded = true,
   onOpenModelPicker,
   onOpenSettings,
+  onNavigate,
 }) => {
   const [inputText, setInputText] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<FileChipPreview[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -87,7 +99,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      if (!isStreaming) {
+        handleSubmit();
+      }
     }
   };
 
@@ -158,6 +172,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const isEmpty = messages.length === 0;
+  const canSend = Boolean(inputText.trim() || attachedFiles.length > 0);
 
   return (
     <div className="flex h-full w-full flex-col justify-between overflow-hidden bg-[#1F1E1D]">
@@ -171,10 +186,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <Sparkles className="h-5 w-5 text-[#FAF9F5]" />
               </div>
               <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-[#FAF9F5]">
-                What video should we make?
+                What should we build today?
               </h1>
               <p className="mt-2 text-sm text-[#A8A59E] max-w-md">
-                Describe a visual concept, storyboard, or motion graphics idea. Framecode writes Remotion React code and renders a 9:16 vertical reel.
+                Chat normally, brainstorm ideas, or ask Framecode to create a 9:16 Remotion video or custom graphic.
               </p>
             </div>
           ) : (
@@ -203,10 +218,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         )}
                       </div>
                     ) : (
-                      /* AI message: plain text with no bubble (Claude style) */
+                      /* AI message: plain text with Markdown (Claude style) */
                       <div className="w-full text-sm leading-relaxed text-[#FAF9F5] select-text">
-                        <div className="mb-2 text-[#FAF9F5]">
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <div className="mb-2 text-[#FAF9F5] space-y-2">
+                          <AssistantMarkdown content={msg.content} />
 
                           {msg.action === 'open-settings' && (
                             <div className="mt-3">
@@ -221,6 +236,37 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                             </div>
                           )}
                         </div>
+
+                        {/* Memory Updated Subtle Row */}
+                        {msg.memoryUpdates && msg.memoryUpdates.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onNavigate ? onNavigate('/settings#memory') : onOpenSettings()
+                            }
+                            className="mt-2 inline-flex items-center gap-2 rounded-lg border border-[#3A3835] bg-[#2A2927]/70 px-3 py-1.5 text-xs text-[#A8A59E] hover:text-[#FAF9F5] hover:border-[#484542] transition cursor-pointer"
+                          >
+                            <Brain className="w-3.5 h-3.5 text-[#D97757] shrink-0" />
+                            <span className="font-medium text-[#FAF9F5]">Memory updated</span>
+                            <span className="truncate max-w-[280px] sm:max-w-[420px]">
+                              · {msg.memoryUpdates.join(' · ')}
+                            </span>
+                          </button>
+                        )}
+
+                        {/* Generated Images */}
+                        {msg.images && msg.images.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            {msg.images.map((img) => (
+                              <GeneratedImageCard
+                                key={img.libraryId}
+                                libraryId={img.libraryId}
+                                name={img.name}
+                                onOpen={(url) => setPreviewImage({ url, name: img.name })}
+                              />
+                            ))}
+                          </div>
+                        )}
 
                         {/* Task Rows */}
                         {msg.tasks && msg.tasks.length > 0 && (
@@ -268,7 +314,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <button
                 type="button"
                 onClick={() => setErrorMessage(null)}
-                className="text-red-400 hover:text-white"
+                className="text-red-400 hover:text-white cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -306,7 +352,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     <button
                       type="button"
                       onClick={() => removeFileChip(idx)}
-                      className="p-1 text-[#A8A59E] hover:text-[#FAF9F5] transition"
+                      className="p-1 text-[#A8A59E] hover:text-[#FAF9F5] transition cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -322,7 +368,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               value={inputText}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Describe the video you want or attach files..."
+              placeholder="Ask anything, or describe a video or image to create..."
               className="w-full resize-none bg-transparent px-2.5 py-1.5 text-sm text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none max-h-[160px] leading-relaxed select-text"
               style={{ minHeight: '38px' }}
             />
@@ -336,7 +382,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               className="hidden"
             />
 
-            {/* Bottom row: '+' upload far left, model chip, send button far right */}
+            {/* Bottom row: '+' upload far left, model chip, send/stop button far right */}
             <div className="flex items-center justify-between pt-2 px-1">
               <div className="flex items-center space-x-2">
                 {/* '+' Upload Button */}
@@ -351,39 +397,55 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 </button>
 
                 {/* Model Picker Chip */}
-                <button
-                  type="button"
-                  onClick={onOpenModelPicker}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#3A3835]/50 text-xs text-[#FAF9F5] transition cursor-pointer"
-                >
-                  {selection ? (
-                    <>
-                      <ProviderLogo provider={selection.provider} className="w-3.5 h-3.5" />
-                      <span className="font-medium truncate max-w-[120px] sm:max-w-[180px]">
-                        {selection.modelName}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="font-medium text-[#A8A59E]">Select model</span>
-                  )}
-                  <ChevronDown className="w-3.5 h-3.5 text-[#A8A59E]" />
-                </button>
+                {!selectionLoaded ? (
+                  <div className="h-7 w-32 rounded-lg border border-[#3A3835] bg-[#1F1E1D] animate-pulse" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenModelPicker}
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#3A3835]/50 text-xs text-[#FAF9F5] transition cursor-pointer"
+                  >
+                    {selection ? (
+                      <>
+                        <ProviderLogo provider={selection.provider} className="w-3.5 h-3.5" />
+                        <span className="font-medium truncate max-w-[120px] sm:max-w-[180px]">
+                          {selection.modelName}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-medium text-[#A8A59E]">Select model</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5 text-[#A8A59E]" />
+                  </button>
+                )}
               </div>
 
-              {/* Send Button */}
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={(!inputText.trim() && attachedFiles.length === 0) || isStreaming}
-                aria-label="Send message"
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] transition-colors ${
-                  (inputText.trim() || attachedFiles.length > 0) && !isStreaming
-                    ? 'bg-[#D97757] text-white hover:bg-[#C5684A] cursor-pointer'
-                    : 'bg-[#3A3835] text-[#A8A59E]/40 cursor-not-allowed'
-                }`}
-              >
-                <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-              </button>
+              {/* Send / Stop Button */}
+              {isStreaming ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  aria-label="Stop"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-[#D97757] text-white hover:bg-[#C5684A] transition-colors cursor-pointer"
+                  title="Stop generation"
+                >
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!canSend}
+                  aria-label="Send message"
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] transition-colors ${
+                    canSend
+                      ? 'bg-[#D97757] text-white hover:bg-[#C5684A] cursor-pointer'
+                      : 'bg-[#3A3835] text-[#A8A59E]/40 cursor-not-allowed'
+                  }`}
+                >
+                  <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+                </button>
+              )}
             </div>
           </div>
 
@@ -394,26 +456,194 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Full-size Image Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="bg-[#2A2927] border border-[#3A3835] rounded-2xl max-w-3xl w-full p-4 space-y-3 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-[#3A3835]">
+              <span className="text-sm font-medium text-[#FAF9F5] truncate">
+                {previewImage.name}
+              </span>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={previewImage.url}
+                  download={previewImage.name}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#33322F] text-xs font-medium text-[#FAF9F5] transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="p-1 rounded-lg text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#3A3835] transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center bg-[#1F1E1D] rounded-xl overflow-hidden max-h-[75vh] p-2">
+              <img
+                src={previewImage.url}
+                alt={previewImage.name}
+                className="max-h-[70vh] max-w-full object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export const ChatArea = React.memo(ChatAreaInner);
+
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <div className="text-sm leading-relaxed text-[#FAF9F5] space-y-2.5 break-words">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="leading-relaxed">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          strong: ({ children }) => (
+            <strong className="font-semibold text-[#FAF9F5]">{children}</strong>
+          ),
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#D97757] underline underline-offset-2 hover:text-[#E58A6C]"
+            >
+              {children}
+            </a>
+          ),
+          code: ({ className, children }) => {
+            const isBlock = Boolean(className);
+            if (isBlock) {
+              return <code className="font-mono text-xs text-[#FAF9F5]">{children}</code>;
+            }
+            return (
+              <code className="font-mono text-xs bg-[#2A2927] border border-[#3A3835] px-1.5 py-0.5 rounded text-[#FAF9F5]">
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre className="font-mono text-xs bg-[#2A2927] border border-[#3A3835] rounded-lg p-3 overflow-x-auto leading-relaxed">
+              {children}
+            </pre>
+          ),
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-2 rounded-lg border border-[#3A3835]">
+              <table className="w-full text-left text-xs border-collapse">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-[#2A2927]">{children}</thead>,
+          th: ({ children }) => (
+            <th className="border-b border-[#3A3835] px-3 py-2 font-semibold text-[#FAF9F5]">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border-b border-[#3A3835]/60 px-3 py-2 text-[#A8A59E]">
+              {children}
+            </td>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-[#D97757] pl-3 text-[#A8A59E] italic">
+              {children}
+            </blockquote>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function GeneratedImageCard({
+  libraryId,
+  name,
+  onOpen,
+}: {
+  libraryId: string;
+  name: string;
+  onOpen: (url: string) => void;
+}) {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+
+    getBlob(libraryId).then((blob) => {
+      if (active && blob) {
+        createdUrl = URL.createObjectURL(blob);
+        setImgUrl(createdUrl);
+      }
+    });
+
+    return () => {
+      active = false;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [libraryId]);
+
+  if (!imgUrl) {
+    return (
+      <div className="w-[240px] h-[240px] rounded-xl border border-[#3A3835] bg-[#2A2927] animate-pulse" />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(imgUrl)}
+      className="group relative max-w-[320px] rounded-xl border border-[#3A3835] bg-[#2A2927] overflow-hidden hover:border-[#D97757] transition cursor-pointer"
+      title={`Preview ${name}`}
+    >
+      <img
+        src={imgUrl}
+        alt={name}
+        className="max-w-[320px] max-h-[360px] object-contain block"
+      />
+    </button>
+  );
+}
 
 function UserAttachmentChip({ attachment }: { attachment: Attachment }) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    let createdUrl: string | null = null;
     if (attachment.kind === 'image') {
       getThumb(attachment.id).then((blob) => {
         if (active && blob) {
-          setThumbUrl(URL.createObjectURL(blob));
+          createdUrl = URL.createObjectURL(blob);
+          setThumbUrl(createdUrl);
         }
       });
     }
     return () => {
       active = false;
-      if (thumbUrl) {
-        URL.revokeObjectURL(thumbUrl);
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
       }
     };
   }, [attachment.id, attachment.kind]);

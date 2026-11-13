@@ -9,7 +9,7 @@ interface MobileHeaderProps {
   isStreaming?: boolean;
 }
 
-export const MobileHeader: React.FC<MobileHeaderProps> = ({
+const MobileHeaderInner: React.FC<MobileHeaderProps> = ({
   onOpenSidebar,
   onOpenTerminal,
   isStreaming = false,
@@ -52,3 +52,5 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
     </header>
   );
 };
+
+export const MobileHeader = React.memo(MobileHeaderInner);

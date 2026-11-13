@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ModelOption, ModelSelection, ProviderId } from '@/types/framecode';
 import { ProviderLogo } from './ProviderLogo';
 import { Search, Eye, Key, Check, X } from 'lucide-react';
+import { useKeyStatus } from '@/lib/keyStatus';
+import {
+  getCachedModels,
+  getStaleCachedModels,
+  setCachedModels,
+} from '@/lib/modelsCache';
 
 interface ModelPickerProps {
   isOpen: boolean;
@@ -21,103 +27,118 @@ const TAB_LABELS: Record<ProviderId, string> = {
 
 const PROVIDER_LIST: ProviderId[] = ['claude', 'openrouter', 'gemini'];
 
-export function ModelPicker({
+const ModelPickerInner: React.FC<ModelPickerProps> = ({
   isOpen,
   onClose,
   selection,
   onSelect,
   onOpenSettings,
-}: ModelPickerProps) {
+}) => {
+  const { status: keyStatus } = useKeyStatus();
+
   const [activeTab, setActiveTab] = useState<ProviderId>(selection?.provider || 'claude');
   const [search, setSearch] = useState('');
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [configured, setConfigured] = useState<Record<ProviderId, boolean>>({
-    claude: false,
-    openrouter: false,
-    gemini: false,
-  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshFailedWithCache, setRefreshFailedWithCache] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
+  const activeTabRef = useRef<ProviderId>(activeTab);
 
-  const loadModelsForTab = async (tab: ProviderId, isConfigured: boolean) => {
-    if (!isConfigured) {
-      setModels([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
-    const reqId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    setModels([]);
-
-    try {
-      const res = await fetch(`/api/models?provider=${tab}`, { cache: 'no-store' });
-      const data = await res.json();
-      if (reqId !== requestIdRef.current) return;
-
-      if (!res.ok || data.error) {
-        setError(data.error || 'Failed to load models');
-      } else {
-        setModels(data.models || []);
-      }
-    } catch (err: unknown) {
-      if (reqId !== requestIdRef.current) return;
-      const msg = err instanceof Error ? err.message : 'Failed to load models';
-      setError(msg);
-    } finally {
-      if (reqId === requestIdRef.current) {
+  const loadModelsForTab = useCallback(
+    async (tab: ProviderId, isConfigured: boolean) => {
+      if (!isConfigured) {
+        setModels([]);
+        setError(null);
+        setRefreshFailedWithCache(false);
         setLoading(false);
+        return;
       }
-    }
-  };
+
+      const reqId = ++requestIdRef.current;
+      const freshCache = getCachedModels(tab);
+      const fallbackCache = freshCache || getStaleCachedModels(tab);
+
+      if (fallbackCache && fallbackCache.length > 0) {
+        setModels(fallbackCache);
+        setLoading(false);
+      } else {
+        setModels([]);
+        setLoading(true);
+      }
+
+      setError(null);
+      setRefreshFailedWithCache(false);
+
+      try {
+        const res = await fetch(`/api/models?provider=${tab}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (reqId !== requestIdRef.current) return;
+
+        if (!res.ok || data.error) {
+          const msg = data.error || 'Failed to load models';
+          if (fallbackCache && fallbackCache.length > 0) {
+            setRefreshFailedWithCache(true);
+          } else {
+            setError(msg);
+          }
+        } else {
+          const liveModels: ModelOption[] = data.models || [];
+          setModels(liveModels);
+          setCachedModels(tab, liveModels);
+        }
+      } catch (err: unknown) {
+        if (reqId !== requestIdRef.current) return;
+        const msg = err instanceof Error ? err.message : 'Failed to load models';
+        if (fallbackCache && fallbackCache.length > 0) {
+          setRefreshFailedWithCache(true);
+        } else {
+          setError(msg);
+        }
+      } finally {
+        if (reqId === requestIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!isOpen) return;
     let active = true;
 
-    const init = async () => {
-      try {
-        const res = await fetch('/api/keys', { cache: 'no-store' });
-        const data = await res.json();
-        const conf: Record<ProviderId, boolean> = data.configured || {
-          claude: false,
-          openrouter: false,
-          gemini: false,
-        };
-        if (!active) return;
-        setConfigured(conf);
-
-        const targetTab = selection?.provider || activeTab;
-        setActiveTab(targetTab);
-        loadModelsForTab(targetTab, Boolean(conf[targetTab]));
-      } catch {
-        if (!active) return;
-        loadModelsForTab(activeTab, false);
-      }
+    const initOnOpen = async () => {
+      await Promise.resolve();
+      if (!active) return;
+      const targetTab = selection?.provider || activeTabRef.current;
+      setActiveTab(targetTab);
+      await loadModelsForTab(targetTab, Boolean(keyStatus[targetTab]?.connected));
     };
 
-    init();
-
+    initOnOpen();
     return () => {
       active = false;
     };
-  }, [isOpen]);
+  }, [isOpen, selection?.provider, keyStatus, loadModelsForTab]);
 
   const handleTabChange = (tab: ProviderId) => {
     if (tab === activeTab) return;
     setActiveTab(tab);
     setSearch('');
     setError(null);
-    loadModelsForTab(tab, Boolean(configured[tab]));
+    setRefreshFailedWithCache(false);
+    loadModelsForTab(tab, Boolean(keyStatus[tab]?.connected));
   };
 
   const handleRetry = () => {
-    loadModelsForTab(activeTab, Boolean(configured[activeTab]));
+    loadModelsForTab(activeTab, Boolean(keyStatus[activeTab]?.connected));
   };
 
   // Close on pointerdown outside as well as on mousedown, and on Escape
@@ -149,9 +170,11 @@ export function ModelPicker({
 
   if (!isOpen) return null;
 
-  // Filter only by query (no filtering by m.provider because models are already from activeTab)
+  // Hide image-generation-only models from chat/video picker
+  const chatCapableModels = models.filter((m) => !m.imageOutput);
+
   const query = search.trim().toLowerCase();
-  const filteredModels = models.filter((m) => {
+  const filteredModels = chatCapableModels.filter((m) => {
     if (!query) return true;
     return (
       m.name.toLowerCase().includes(query) ||
@@ -160,7 +183,7 @@ export function ModelPicker({
   });
 
   const visibleModels = filteredModels.slice(0, 100);
-  const isTabConfigured = configured[activeTab];
+  const isTabConfigured = Boolean(keyStatus[activeTab]?.connected);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
@@ -172,6 +195,7 @@ export function ModelPicker({
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#3A3835]">
           <h3 className="text-sm font-medium text-[#FAF9F5]">Select Model</h3>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 rounded-md text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#3A3835] transition cursor-pointer"
           >
@@ -182,11 +206,12 @@ export function ModelPicker({
         {/* Provider Tabs */}
         <div className="grid grid-cols-3 gap-1 p-2 border-b border-[#3A3835] bg-[#1F1E1D]">
           {PROVIDER_LIST.map((p) => {
-            const isConfig = configured[p];
+            const isConfig = Boolean(keyStatus[p]?.connected);
             const isActive = activeTab === p;
             return (
               <button
                 key={p}
+                type="button"
                 onClick={() => handleTabChange(p)}
                 className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-medium transition cursor-pointer ${
                   isActive
@@ -218,6 +243,18 @@ export function ModelPicker({
               className="w-full bg-[#1F1E1D] border border-[#3A3835] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none focus:border-[#D97757]"
             />
           </div>
+          {refreshFailedWithCache && (
+            <div className="mt-2 flex items-center justify-between text-[11px] text-[#A8A59E]">
+              <span>Couldn&apos;t refresh</span>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="text-[#D97757] hover:underline cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Model List */}
@@ -226,6 +263,7 @@ export function ModelPicker({
             <div className="m-2 p-3 bg-[#1F1E1D] border border-amber-900/40 rounded-lg text-xs text-[#A8A59E] space-y-2">
               <p>No API key configured for {TAB_LABELS[activeTab]}. Add key to enable.</p>
               <button
+                type="button"
                 onClick={() => {
                   onClose();
                   onOpenSettings();
@@ -242,13 +280,14 @@ export function ModelPicker({
             <div className="p-6 text-center text-xs text-[#A8A59E] space-y-3">
               <p className="text-red-400 break-words">{error}</p>
               <button
+                type="button"
                 onClick={handleRetry}
                 className="inline-flex items-center px-3 py-1.5 bg-[#3A3835] hover:bg-[#484542] text-[#FAF9F5] rounded-md text-xs font-medium transition cursor-pointer"
               >
                 Retry
               </button>
             </div>
-          ) : models.length === 0 ? (
+          ) : chatCapableModels.length === 0 ? (
             <div className="p-8 text-center text-xs text-[#A8A59E]">This account returned no models.</div>
           ) : filteredModels.length === 0 ? (
             <div className="p-8 text-center text-xs text-[#A8A59E]">No matching models found</div>
@@ -260,6 +299,7 @@ export function ModelPicker({
                 return (
                   <button
                     key={m.id}
+                    type="button"
                     onClick={() => {
                       onSelect({
                         provider: activeTab,
@@ -303,4 +343,6 @@ export function ModelPicker({
       </div>
     </div>
   );
-}
+};
+
+export const ModelPicker = React.memo(ModelPickerInner);

@@ -76,7 +76,8 @@ function blobToBase64(blob: Blob): Promise<string> {
  */
 export async function captureStillsForReview(
   component: React.ComponentType,
-  config: VideoConfig
+  config: VideoConfig,
+  signal?: AbortSignal
 ): Promise<string[]> {
   const { width, height, fps, durationInFrames } = config;
 
@@ -89,6 +90,7 @@ export async function captureStillsForReview(
   const base64Images: string[] = [];
 
   for (const frame of sampleFrames) {
+    if (signal?.aborted) break;
     try {
       const still = await renderStillOnWeb({
         composition: {
@@ -100,12 +102,14 @@ export async function captureStillsForReview(
           fps,
         },
         frame,
+        signal: signal || null,
       });
 
       const blob = await still.blob({ format: 'jpeg', quality: 0.7 });
       const b64 = await blobToBase64(blob);
       base64Images.push(b64);
     } catch (err) {
+      if (signal?.aborted) throw err;
       console.warn(`Failed to capture frame ${frame} for review:`, err);
     }
   }
@@ -114,12 +118,39 @@ export async function captureStillsForReview(
 }
 
 /**
+ * Renders frame 0 of a single-frame composition to PNG.
+ */
+export async function renderSingleStillToPng(
+  component: React.ComponentType,
+  config: { width: number; height: number },
+  signal?: AbortSignal
+): Promise<{ blob: Blob; url: string }> {
+  const still = await renderStillOnWeb({
+    composition: {
+      component,
+      id: 'Composition',
+      width: config.width,
+      height: config.height,
+      durationInFrames: 1,
+      fps: 30,
+    },
+    frame: 0,
+    signal: signal || null,
+  });
+
+  const blob = await still.blob({ format: 'png' });
+  const url = URL.createObjectURL(blob);
+  return { blob, url };
+}
+
+/**
  * Renders full MP4 video in the browser using WebCodecs.
  */
 export async function renderVideoToMp4(
   component: React.ComponentType,
   config: VideoConfig,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
+  signal?: AbortSignal
 ): Promise<{ blob: Blob; url: string }> {
   const { width, height, fps, durationInFrames } = config;
 
@@ -133,6 +164,7 @@ export async function renderVideoToMp4(
       fps,
     },
     container: 'mp4',
+    signal: signal || null,
     onProgress: (p) => {
       if (typeof p.progress === 'number') {
         onProgress(Math.round(p.progress * 100));

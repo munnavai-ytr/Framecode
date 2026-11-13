@@ -1,7 +1,7 @@
-import { ChatSession, LibraryItem } from '@/types/framecode';
+import { ChatSession, LibraryItem, Memory } from '@/types/framecode';
 
 const DB_NAME = 'framecode';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 let hasRequestedPersistence = false;
@@ -16,7 +16,7 @@ function requestStoragePersistence() {
   }
 }
 
-function getDB(): Promise<IDBDatabase> {
+export function getDB(): Promise<IDBDatabase> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     return Promise.reject(new Error('Storage is unavailable in this browser mode.'));
   }
@@ -42,6 +42,9 @@ function getDB(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains('thumbs')) {
           db.createObjectStore('thumbs');
         }
+        if (!db.objectStoreNames.contains('memories')) {
+          db.createObjectStore('memories', { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = () => {
@@ -61,7 +64,7 @@ function getDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function handleQuotaError(err: unknown): never {
+export function handleQuotaError(err: unknown): never {
   const errorName = err instanceof Error ? err.name : (err as { name?: string })?.name;
   if (errorName === 'QuotaExceededError' || errorName === 'NS_ERROR_DOM_QUOTA_REACHED') {
     throw new Error('Browser storage is full. Delete some items in the Library.');
@@ -214,6 +217,67 @@ export async function deleteLibraryItem(id: string): Promise<void> {
       tx.objectStore('thumbs').delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror = (e) => reject((e.target as IDBRequest).error);
+    });
+  } catch (err) {
+    return handleQuotaError(err);
+  }
+}
+
+export async function dbLoadMemories(): Promise<Memory[]> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('memories', 'readonly');
+      const store = tx.objectStore('memories');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(new Error('Storage is unavailable in this browser mode.'));
+    });
+  } catch (err) {
+    return handleQuotaError(err);
+  }
+}
+
+export async function dbPutMemory(memory: Memory): Promise<void> {
+  try {
+    const db = await getDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      const request = store.put(memory);
+      request.onsuccess = () => resolve();
+      request.onerror = (e) => reject((e.target as IDBRequest).error);
+    });
+    requestStoragePersistence();
+  } catch (err) {
+    return handleQuotaError(err);
+  }
+}
+
+export async function dbDeleteMemory(id: string): Promise<void> {
+  try {
+    const db = await getDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = (e) => reject((e.target as IDBRequest).error);
+    });
+  } catch (err) {
+    return handleQuotaError(err);
+  }
+}
+
+export async function dbClearMemories(): Promise<void> {
+  try {
+    const db = await getDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = (e) => reject((e.target as IDBRequest).error);
     });
   } catch (err) {
     return handleQuotaError(err);

@@ -13,7 +13,7 @@ interface RightPanelProps {
   isRenderingMp4?: boolean;
 }
 
-export const RightPanel: React.FC<RightPanelProps> = ({
+const RightPanelInner: React.FC<RightPanelProps> = ({
   video,
   terminalLines,
   isStreaming = false,
@@ -39,3 +39,5 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     </div>
   );
 };
+
+export const RightPanel = React.memo(RightPanelInner);
