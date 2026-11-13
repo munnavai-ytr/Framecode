@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@lobehub/icons": "^6.15.1",
     "@remotion/media": "4.0.542",
     "@remotion/player": "4.0.542",
     "@remotion/web-renderer": "4.0.542",

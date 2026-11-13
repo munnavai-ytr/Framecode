@@ -29,13 +29,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const playerRef = useRef<PlayerRef>(null);
   const videoElemRef = useRef<HTMLVideoElement>(null);
 
-  const durationSec = video?.durationSec || Math.round((video?.videoConfig?.durationInFrames || 450) / (video?.videoConfig?.fps || 30));
+  const durationSec =
+    video?.durationSec ||
+    Math.round((video?.videoConfig?.durationInFrames || 450) / (video?.videoConfig?.fps || 30));
   const fps = video?.videoConfig?.fps || 30;
   const durationInFrames = video?.videoConfig?.durationInFrames || durationSec * fps;
 
   const videoCode = video?.code;
 
-  // Asynchronously resolve asset/stock tokens and compile TSX code in browser sandbox
   useEffect(() => {
     let active = true;
     if (!videoCode) {
@@ -65,7 +66,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [videoCode]);
 
-  // Track player frame updates
   useEffect(() => {
     const currentElem = playerRef.current;
     if (!currentElem) return;
@@ -89,7 +89,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [CompiledComponent, fps]);
 
-  // Track MP4 video element updates if using rendered video
   useEffect(() => {
     const v = videoElemRef.current;
     if (!v) return;
@@ -191,10 +190,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   if (!video) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-[12px] border border-[#3A3835] bg-[#2A2927] p-6 text-center">
-        <Film className="h-8 w-8 text-[#A8A59E]/40 mb-3" />
-        <p className="text-sm font-medium text-[#FAF9F5]">No video rendered yet</p>
-        <p className="text-xs text-[#A8A59E] mt-1 max-w-[220px]">
+      <div className="flex h-full w-full flex-col items-center justify-center rounded-[12px] border border-border bg-surface-2 p-6 text-center">
+        <Film className="h-8 w-8 text-faint mb-3" />
+        <p className="text-sm font-medium text-text">No video rendered yet</p>
+        <p className="text-xs text-muted mt-1 max-w-[220px]">
           Describe the video you want in chat to compile a 9:16 Remotion preview.
         </p>
       </div>
@@ -203,43 +202,43 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   return (
     <div
-      className={`flex flex-col rounded-[12px] border border-[#3A3835] bg-[#2A2927] overflow-hidden ${
-        compact ? 'w-full max-w-[340px] mx-auto' : 'w-full'
+      className={`flex flex-col rounded-[12px] border border-border bg-surface-2 overflow-hidden ${
+        compact ? 'w-full max-w-[360px] mx-auto' : 'w-full'
       }`}
     >
       {/* Top Header */}
-      <div className="flex items-center justify-between border-b border-[#3A3835] px-3.5 py-2.5 bg-[#2A2927]">
+      <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5 bg-surface-2">
         <div className="flex items-center gap-2 truncate">
-          <span className="font-mono text-[10px] text-[#A8A59E] uppercase tracking-wider">
+          <span className="font-mono text-[10px] text-muted uppercase tracking-wider">
             9:16 Video
           </span>
-          <span className="text-[#3A3835]">·</span>
-          <span className="truncate text-xs font-medium text-[#FAF9F5]">
+          <span className="text-border-strong">·</span>
+          <span className="truncate text-xs font-medium text-text">
             {video.title}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {video.mp4BlobUrl && (
-            <span className="font-mono text-[10px] text-[#FAF9F5] bg-[#1F1E1D] border border-[#3A3835] px-1.5 py-0.5 rounded">
+            <span className="font-mono text-[10px] text-success bg-surface-1 border border-border px-1.5 py-0.5 rounded">
               MP4 Ready
             </span>
           )}
-          <span className="font-mono text-[10px] text-[#A8A59E]">
-            {video.resolution || `${video.videoConfig?.width || 720}x${video.videoConfig?.height || 1280}`}
+          <span className="font-mono text-[10px] text-muted">
+            {video.resolution ||
+              `${video.videoConfig?.width || 720}x${video.videoConfig?.height || 1280}`}
           </span>
         </div>
       </div>
 
       {/* 9:16 Vertical Preview Container */}
-      <div className="relative w-full bg-[#1F1E1D] flex items-center justify-center p-3">
+      <div className="relative w-full bg-surface-1 flex items-center justify-center p-3">
         <div
-          className={`relative mx-auto w-full aspect-[9/16] rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] overflow-hidden flex flex-col justify-between ${
+          className={`relative mx-auto w-full aspect-[9/16] rounded-[8px] border border-border bg-term-bg overflow-hidden flex flex-col justify-between ${
             compact ? 'max-h-[380px]' : 'max-h-[360px]'
           }`}
         >
-          {/* Render Mode: Real MP4 video playback */}
           {video.mp4BlobUrl ? (
-            <div className="relative w-full h-full flex items-center justify-center bg-black">
+            <div className="relative w-full h-full flex items-center justify-center bg-term-bg">
               <video
                 ref={videoElemRef}
                 src={video.mp4BlobUrl}
@@ -250,8 +249,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               />
             </div>
           ) : CompiledComponent ? (
-            /* Render Mode: Live Remotion Player in Browser */
-            <div className="relative w-full h-full bg-[#1F1E1D] overflow-hidden">
+            <div className="relative w-full h-full bg-term-bg overflow-hidden">
               <Player
                 ref={playerRef}
                 component={CompiledComponent}
@@ -266,12 +264,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               />
             </div>
           ) : (
-            /* Fallback or Compile Error View */
             <div className="flex flex-col items-center justify-center text-center my-auto p-4">
-              <Film className="h-8 w-8 text-[#A8A59E]/60 mb-2" />
-              <p className="text-xs font-mono text-[#FAF9F5]">Compiling composition...</p>
+              <Film className="h-8 w-8 text-faint mb-2" />
+              <p className="text-xs font-mono text-text">Compiling composition...</p>
               {compileError && (
-                <p className="mt-2 text-[10px] font-mono text-red-400 max-w-[200px] break-all">
+                <p className="mt-2 text-[10px] font-mono text-danger max-w-[200px] break-all">
                   {compileError}
                 </p>
               )}
@@ -280,7 +277,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
           {/* Top overlay badge */}
           <div className="absolute top-2 left-2 z-10 pointer-events-none">
-            <span className="font-mono text-[9px] text-[#A8A59E] bg-[#1F1E1D]/80 backdrop-blur-xs border border-[#3A3835] px-1.5 py-0.5 rounded">
+            <span className="font-mono text-[9px] text-muted bg-surface-1/90 backdrop-blur-xs border border-border px-1.5 py-0.5 rounded">
               {video.mp4BlobUrl ? 'MP4' : 'REMOTION LIVE'}
             </span>
           </div>
@@ -288,11 +285,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       </div>
 
       {/* Control Bar: Timeline, Play/Pause, Time Label, Download */}
-      <div className="border-t border-[#3A3835] bg-[#2A2927] p-3 space-y-2.5">
+      <div className="border-t border-border bg-surface-2 p-3 space-y-2.5">
         {/* Timeline Scrubber */}
         <div
           onClick={handleSeek}
-          className="group relative h-2 w-full cursor-pointer rounded-full bg-[#1F1E1D] border border-[#3A3835]"
+          className="group relative h-2 w-full cursor-pointer rounded-full bg-surface-1 border border-border"
           role="slider"
           aria-valuemin={0}
           aria-valuemax={durationSec}
@@ -300,7 +297,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           tabIndex={0}
         >
           <div
-            className="h-full rounded-full bg-[#A8A59E] group-hover:bg-[#FAF9F5] transition-all"
+            className="h-full rounded-full bg-accent group-hover:bg-accent-text transition-all"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -312,7 +309,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <button
               type="button"
               onClick={togglePlay}
-              className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] text-[#FAF9F5] hover:bg-[#33322F] transition-colors"
+              className="flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center rounded-[8px] border border-border bg-surface-1 text-text hover:bg-surface-3 transition-colors cursor-pointer"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -326,7 +323,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <button
               type="button"
               onClick={handleReset}
-              className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#33322F] transition-colors"
+              className="flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center rounded-[8px] border border-border bg-surface-1 text-muted hover:text-text hover:bg-surface-3 transition-colors cursor-pointer"
               aria-label="Restart video"
               title="Restart"
             >
@@ -334,7 +331,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </button>
 
             {/* Time label: 0:12 / 0:30 */}
-            <span className="font-mono text-xs tabular-nums text-[#A8A59E] ml-1">
+            <span className="font-mono text-xs tabular-nums text-muted ml-1">
               {formatTime(currentTimeSec)} / {formatTime(durationSec)}
             </span>
           </div>
@@ -344,21 +341,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             type="button"
             onClick={handleDownload}
             disabled={isRenderingMp4}
-            className="flex h-9 items-center gap-1.5 rounded-[8px] border border-[#3A3835] bg-[#1F1E1D] px-3 text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] disabled:opacity-50 transition-colors"
+            className="flex h-11 lg:h-9 items-center gap-1.5 rounded-[8px] border border-border bg-surface-1 px-3 text-xs font-medium text-text hover:bg-surface-3 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {isRenderingMp4 ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#D97757]" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
                 <span>Rendering...</span>
               </>
             ) : downloadSuccess ? (
               <>
-                <Check className="h-3.5 w-3.5 text-[#A8A59E]" />
+                <Check className="h-3.5 w-3.5 text-success" />
                 <span>Downloaded</span>
               </>
             ) : (
               <>
-                <Download className="h-3.5 w-3.5 text-[#A8A59E]" />
+                <Download className="h-3.5 w-3.5 text-muted" />
                 <span>{video.mp4BlobUrl ? 'Download MP4' : 'Render MP4'}</span>
               </>
             )}

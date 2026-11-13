@@ -21,7 +21,7 @@ const RightPanelInner: React.FC<RightPanelProps> = ({
   isRenderingMp4 = false,
 }) => {
   return (
-    <div className="hidden lg:flex h-full w-[400px] shrink-0 flex-col border-l border-[#3A3835] bg-[#1F1E1D] p-3 gap-3 overflow-hidden select-none">
+    <div className="hidden lg:flex h-full w-[360px] min-[1440px]:w-[440px] shrink-0 flex-col border-l border-border bg-surface-1 p-3 gap-3 overflow-hidden select-none">
       {/* Top: Video Player */}
       <div className="shrink-0">
         <VideoPlayer

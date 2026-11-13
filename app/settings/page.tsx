@@ -17,6 +17,7 @@ import {
   Upload,
   Plus,
   X,
+  ArrowUpRight,
 } from 'lucide-react';
 import { ProviderId, Memory } from '@/types/framecode';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -42,6 +43,32 @@ interface KeyCardState {
   success: boolean;
 }
 
+const PROVIDERS: Array<{
+  id: ProviderId;
+  name: string;
+  description: string;
+  keyUrl: string;
+}> = [
+  {
+    id: 'claude',
+    name: 'Claude',
+    description: 'Anthropic Claude models for planning, chat, and Remotion video coding.',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified gateway for chat, coding, and image generation models.',
+    keyUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    description: 'Google Gemini multimodal models and native image generation.',
+    keyUrl: 'https://aistudio.google.com/apikey',
+  },
+];
+
 export default function SettingsPage() {
   const { status: keyStatus, loaded: keysLoaded, apply: applyKeyStatus } = useKeyStatus();
 
@@ -50,6 +77,9 @@ export default function SettingsPage() {
     openrouter: { apiKey: '', showKey: false, loading: false, error: null, success: false },
     gemini: { apiKey: '', showKey: false, loading: false, error: null, success: false },
   });
+
+  const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
+  const [activeNav, setActiveNav] = useState<'keys' | 'memory'>('keys');
 
   // Memory state
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -69,7 +99,30 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let active = true;
-    const initMemory = async () => {
+
+    const initSettings = async () => {
+      await Promise.resolve();
+      if (!active) return;
+
+      try {
+        const stored = localStorage.getItem('fc_selection');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (
+            parsed?.provider &&
+            ['claude', 'openrouter', 'gemini'].includes(parsed.provider)
+          ) {
+            setActiveProvider(parsed.provider as ProviderId);
+          }
+        }
+      } catch {
+        // Ignore storage read error
+      }
+
+      if (window.location.hash === '#memory') {
+        setActiveNav('memory');
+      }
+
       setMemoryOn(isMemoryEnabled());
       try {
         const list = await loadMemories();
@@ -82,7 +135,9 @@ export default function SettingsPage() {
         if (active) setMemoriesLoaded(true);
       }
     };
-    initMemory();
+
+    initSettings();
+
     return () => {
       active = false;
     };
@@ -292,416 +347,466 @@ export default function SettingsPage() {
     }
   };
 
-  const providers: { id: ProviderId; name: string; description: string }[] = [
-    {
-      id: 'claude',
-      name: 'Anthropic Claude',
-      description: 'Supports Claude 3.7 Sonnet & 3.5 Haiku models via Anthropic API.',
-    },
-    {
-      id: 'openrouter',
-      name: 'OpenRouter',
-      description: 'Access hundreds of AI models including Claude, Gemini, Llama, and DeepSeek.',
-    },
-    {
-      id: 'gemini',
-      name: 'Google Gemini',
-      description: 'Supports Gemini 2.5 Flash & 2.5 Pro multimodal models.',
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-[#1F1E1D] text-[#FAF9F5] p-4 sm:p-8">
-      <div className="max-w-2xl mx-auto space-y-8">
-        {/* Navigation */}
-        <div className="flex items-center space-x-3">
+    <div className="min-h-screen bg-bg text-text">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-20 h-16 border-b border-border bg-surface-1/90 backdrop-blur-xs px-4 sm:px-8 flex items-center">
+        <div className="max-w-[1040px] mx-auto w-full flex items-center space-x-3">
           <Link
             href="/"
-            className="p-2 rounded-lg bg-[#2A2927] border border-[#3A3835] hover:bg-[#3A3835] transition text-[#FAF9F5]"
+            className="flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center rounded-lg bg-surface-2 border border-border hover:bg-surface-3 hover:border-border-strong transition text-text"
+            aria-label="Back to chat"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
         </div>
+      </header>
 
-        {/* Security Notice */}
-        <div className="p-4 bg-[#2A2927] border border-[#3A3835] rounded-xl flex items-start space-x-3">
-          <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-[#A8A59E] leading-relaxed">
-            <span className="font-medium text-[#FAF9F5]">Secure Vault:</span> API keys are
-            encrypted using the server&apos;s <code className="text-[#D97757] font-mono">KEYS_SECRET</code> and stored in an HTTP-only browser cookie. Keys never leak to client JavaScript, third parties, or server logs.
+      {/* Main Content Layout: Sticky Left Nav on Desktop (>= 1024px) + Single Column Content */}
+      <div className="max-w-[1040px] mx-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col lg:flex-row gap-8">
+        {/* Left Navigation Column */}
+        <aside className="hidden lg:block w-[220px] shrink-0">
+          <nav className="sticky top-24 space-y-1.5" aria-label="Settings sections">
+            <a
+              href="#keys"
+              onClick={() => setActiveNav('keys')}
+              className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-medium transition border ${
+                activeNav === 'keys'
+                  ? 'bg-surface-2 border-border text-text'
+                  : 'border-transparent text-muted hover:text-text hover:bg-surface-2/60'
+              }`}
+            >
+              <Key className="w-4 h-4 text-accent-text shrink-0" />
+              <span>API keys</span>
+            </a>
+
+            <a
+              href="#memory"
+              onClick={() => setActiveNav('memory')}
+              className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-medium transition border ${
+                activeNav === 'memory'
+                  ? 'bg-surface-2 border-border text-text'
+                  : 'border-transparent text-muted hover:text-text hover:bg-surface-2/60'
+              }`}
+            >
+              <Brain className="w-4 h-4 text-accent-text shrink-0" />
+              <span>Memory</span>
+            </a>
+          </nav>
+        </aside>
+
+        {/* Right Content Column */}
+        <main className="flex-1 max-w-[760px] space-y-8">
+          {/* Security Notice */}
+          <div className="p-4 bg-surface-2 border border-border rounded-[16px] flex items-start space-x-3">
+            <ShieldCheck className="w-5 h-5 text-success shrink-0 mt-0.5" />
+            <div className="text-xs text-muted leading-relaxed">
+              <span className="font-medium text-text">Secure Vault:</span> API keys are
+              encrypted using the server&apos;s{' '}
+              <code className="text-accent-text font-mono">KEYS_SECRET</code> and stored in an
+              HTTP-only browser cookie. Keys never leak to client JavaScript, third parties, or
+              server logs.
+            </div>
           </div>
-        </div>
 
-        {/* Provider Cards */}
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-[#FAF9F5]">API Keys</h2>
-          {providers.map((p) => {
-            const pStatus = keyStatus[p.id];
-            const isConfigured = pStatus?.connected ?? false;
-            const last4 = pStatus?.last4;
-            const card = cards[p.id];
+          {/* API Keys Section */}
+          <section id="keys" className="scroll-mt-24 space-y-4">
+            <h2 className="text-sm font-semibold text-text">API keys</h2>
+            {PROVIDERS.map((p) => {
+              const pStatus = keyStatus[p.id];
+              const isConfigured = pStatus?.connected ?? false;
+              const last4 = pStatus?.last4;
+              const isActive = activeProvider === p.id;
+              const card = cards[p.id];
 
-            return (
-              <div
-                key={p.id}
-                className="bg-[#2A2927] border border-[#3A3835] rounded-xl p-5 space-y-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center space-x-3">
-                    <ProviderLogo provider={p.id} className="w-5 h-5" />
-                    <div>
-                      <h3 className="text-sm font-medium text-[#FAF9F5]">{p.name}</h3>
-                      <p className="text-xs text-[#A8A59E]">{p.description}</p>
+              return (
+                <div
+                  key={p.id}
+                  className="bg-surface-2 border border-border rounded-[16px] p-5 space-y-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center space-x-3">
+                      <ProviderLogo provider={p.id} size={22} />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-medium text-text">{p.name}</h3>
+                          {isActive && (
+                            <span className="px-2 py-0.5 rounded-full bg-accent-soft border border-accent/30 text-[10px] font-medium text-accent-text">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted mt-0.5">{p.description}</p>
+                      </div>
                     </div>
-                  </div>
-                  {!keysLoaded ? (
-                    <div className="w-24 h-6 rounded-full bg-[#1F1E1D] border border-[#3A3835] animate-pulse shrink-0" />
-                  ) : (
-                    <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#1F1E1D] border border-[#3A3835] rounded-full text-xs shrink-0">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          isConfigured ? 'bg-emerald-500' : 'bg-[#3A3835]'
-                        }`}
-                      />
-                      <span className="text-[#A8A59E] font-medium">
-                        {isConfigured
-                          ? last4
-                            ? `Connected · ••••${last4}`
-                            : 'Connected'
-                          : 'Not Configured'}
-                      </span>
-                    </div>
-                  )}
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <div className="relative flex-1">
-                      <Key className="w-4 h-4 absolute left-3 top-2.5 text-[#A8A59E]" />
-                      <input
-                        type={card.showKey ? 'text' : 'password'}
-                        value={card.apiKey}
-                        onChange={(e) =>
-                          setCards((prev) => ({
-                            ...prev,
-                            [p.id]: { ...prev[p.id], apiKey: e.target.value, error: null },
-                          }))
-                        }
-                        placeholder={
-                          isConfigured
+                    {!keysLoaded ? (
+                      <div className="w-28 h-6 rounded-full bg-surface-1 border border-border animate-pulse shrink-0" />
+                    ) : (
+                      <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-surface-1 border border-border rounded-full text-xs shrink-0">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            isConfigured ? 'bg-success' : 'bg-border-strong'
+                          }`}
+                        />
+                        <span className="text-muted font-medium">
+                          {isConfigured
                             ? last4
-                              ? `••••••••••••••••${last4}`
-                              : '••••••••••••••••••••••••••••'
-                            : `Enter ${p.name} API Key`
-                        }
-                        className="w-full bg-[#1F1E1D] border border-[#3A3835] rounded-lg pl-9 pr-10 py-2 text-xs text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none focus:border-[#D97757]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCards((prev) => ({
-                            ...prev,
-                            [p.id]: { ...prev[p.id], showKey: !card.showKey },
-                          }))
-                        }
-                        className="absolute right-3 top-2.5 text-[#A8A59E] hover:text-[#FAF9F5]"
-                      >
-                        {card.showKey ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSaveKey(p.id)}
-                      disabled={card.loading || !card.apiKey.trim()}
-                      className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
-                        card.apiKey.trim() && !card.loading
-                          ? 'bg-[#D97757] hover:bg-[#D97757]/90 text-white cursor-pointer'
-                          : 'bg-[#3A3835] text-[#A8A59E]/50 cursor-not-allowed'
-                      }`}
-                    >
-                      {card.loading ? 'Verifying...' : 'Connect'}
-                    </button>
-
-                    {isConfigured && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveKey(p.id)}
-                        disabled={card.loading}
-                        className="p-2 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-red-500/10 text-[#A8A59E] hover:text-red-400 transition"
-                        title="Disconnect API key"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                              ? `Key ending ${last4}`
+                              : 'Connected'
+                            : 'No key'}
+                        </span>
+                      </div>
                     )}
                   </div>
 
-                  {card.error && (
-                    <div className="flex items-center space-x-1.5 text-xs text-red-400 pt-1">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{card.error}</span>
-                    </div>
-                  )}
-
-                  {card.success && (
-                    <div className="flex items-center space-x-1.5 text-xs text-emerald-400 pt-1">
-                      <Check className="w-3.5 h-3.5 shrink-0" />
-                      <span>API key verified and saved securely.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </section>
-
-        {/* Long-Term Memory Section */}
-        <section
-          id="memory"
-          className="bg-[#2A2927] border border-[#3A3835] rounded-xl p-5 space-y-5"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 rounded-lg bg-[#1F1E1D] border border-[#3A3835]">
-                <Brain className="w-4 h-4 text-[#D97757]" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h2 className="text-sm font-semibold text-[#FAF9F5]">Memory</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-[#1F1E1D] border border-[#3A3835] text-[11px] text-[#A8A59E]">
-                    {memoriesLoaded ? `${memories.length} saved` : 'Loading...'}
-                  </span>
-                </div>
-                <p className="text-xs text-[#A8A59E] mt-0.5">
-                  Framecode remembers helpful facts and preferences across chats. Stored locally in your browser&apos;s IndexedDB.
-                </p>
-              </div>
-            </div>
-
-            {/* Use Memory Switch */}
-            <label className="flex items-center space-x-2 cursor-pointer shrink-0 select-none">
-              <span className="text-xs text-[#A8A59E]">Use memory</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={memoryOn}
-                onClick={handleToggleMemoryEnabled}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                  memoryOn ? 'bg-[#D97757]' : 'bg-[#3A3835]'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[#FAF9F5] transition-transform ${
-                    memoryOn ? 'translate-x-4.5' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </label>
-          </div>
-
-          {/* Add Memory Form */}
-          <form onSubmit={handleAddMemory} className="flex items-center space-x-2">
-            <input
-              type="text"
-              value={newMemoryText}
-              onChange={(e) => {
-                setNewMemoryText(e.target.value);
-                setMemoryError(null);
-              }}
-              maxLength={240}
-              placeholder="Add something to remember (e.g., Prefer dark kinetic typography)..."
-              className="flex-1 bg-[#1F1E1D] border border-[#3A3835] rounded-lg px-3 py-2 text-xs text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none focus:border-[#D97757]"
-            />
-            <button
-              type="submit"
-              disabled={!newMemoryText.trim()}
-              className={`flex items-center space-x-1 px-3.5 py-2 rounded-lg text-xs font-medium transition ${
-                newMemoryText.trim()
-                  ? 'bg-[#D97757] hover:bg-[#D97757]/90 text-white cursor-pointer'
-                  : 'bg-[#3A3835] text-[#A8A59E]/50 cursor-not-allowed'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add</span>
-            </button>
-          </form>
-
-          {/* Actions Bar: Export / Import / Clear all */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#3A3835]">
-            <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                onClick={handleExportMemories}
-                disabled={memories.length === 0}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#33322F] text-xs text-[#FAF9F5] transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Download className="w-3.5 h-3.5 text-[#A8A59E]" />
-                <span>Export</span>
-              </button>
-
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImportFile}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => importInputRef.current?.click()}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#33322F] text-xs text-[#FAF9F5] transition cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5 text-[#A8A59E]" />
-                <span>Import</span>
-              </button>
-            </div>
-
-            {memories.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setConfirmClearAll(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-red-900/40 bg-[#1F1E1D] hover:bg-red-500/10 text-xs text-red-400 transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear all</span>
-              </button>
-            )}
-          </div>
-
-          {memoryError && (
-            <div className="flex items-center space-x-1.5 text-xs text-red-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{memoryError}</span>
-            </div>
-          )}
-
-          {memoryNotice && (
-            <div className="flex items-center justify-between p-2.5 bg-[#1F1E1D] border border-[#3A3835] rounded-lg text-xs text-[#FAF9F5]">
-              <span>{memoryNotice}</span>
-              <button
-                type="button"
-                onClick={() => setMemoryNotice(null)}
-                className="text-[#A8A59E] hover:text-[#FAF9F5]"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Memories List */}
-          {memoriesLoaded && memories.length === 0 ? (
-            <div className="py-6 text-center text-xs text-[#A8A59E]">
-              No memories saved yet. Add preferences here or tell Framecode what to remember in chat.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {memories.map((m) => {
-                const isEditing = editingId === m.id;
-                return (
-                  <div
-                    key={m.id}
-                    className="p-3 bg-[#1F1E1D] border border-[#3A3835] rounded-lg space-y-2"
-                  >
-                    {isEditing ? (
-                      <div className="flex items-center space-x-2">
+                  <div className="space-y-2.5">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="relative flex-1">
+                        <Key className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
                         <input
-                          type="text"
-                          value={editingText}
-                          onChange={(e) => setEditingText(e.target.value)}
-                          maxLength={240}
-                          className="flex-1 bg-[#2A2927] border border-[#3A3835] rounded-md px-2.5 py-1.5 text-xs text-[#FAF9F5] focus:outline-none focus:border-[#D97757]"
+                          type={card.showKey ? 'text' : 'password'}
+                          value={card.apiKey}
+                          onChange={(e) =>
+                            setCards((prev) => ({
+                              ...prev,
+                              [p.id]: { ...prev[p.id], apiKey: e.target.value, error: null },
+                            }))
+                          }
+                          placeholder={
+                            isConfigured
+                              ? last4
+                                ? `••••••••••••••••${last4}`
+                                : '••••••••••••••••••••••••••••'
+                              : `Paste your ${p.name} API key`
+                          }
+                          className="w-full min-h-[44px] lg:min-h-[38px] bg-surface-1 border border-border rounded-xl pl-9 pr-11 py-2 text-base lg:text-xs text-text placeholder-muted focus:outline-none focus:border-accent"
                         />
                         <button
                           type="button"
-                          onClick={() => handleSaveEdit(m.id)}
-                          className="px-2.5 py-1.5 rounded-md bg-[#D97757] text-white text-xs font-medium hover:bg-[#D97757]/90 cursor-pointer"
+                          onClick={() =>
+                            setCards((prev) => ({
+                              ...prev,
+                              [p.id]: { ...prev[p.id], showKey: !card.showKey },
+                            }))
+                          }
+                          aria-label={card.showKey ? 'Hide API key' : 'Show API key'}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-text cursor-pointer"
                         >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(null);
-                            setEditingText('');
-                          }}
-                          className="px-2.5 py-1.5 rounded-md border border-[#3A3835] bg-[#2A2927] text-xs text-[#A8A59E] hover:text-[#FAF9F5] cursor-pointer"
-                        >
-                          Cancel
+                          {card.showKey ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <p className="text-xs text-[#FAF9F5] leading-relaxed break-words">
-                            {m.text}
-                          </p>
-                          <div className="flex items-center space-x-2 text-[10px] text-[#A8A59E]">
-                            <span
-                              className={`px-1.5 py-0.5 rounded font-medium ${
-                                m.source === 'ai'
-                                  ? 'bg-[#D97757]/15 text-[#D97757]'
-                                  : 'bg-[#3A3835] text-[#FAF9F5]'
-                              }`}
-                            >
-                              {m.source === 'ai' ? 'AI' : 'You'}
-                            </span>
-                            <span className="font-mono">
-                              {formatMemoryDate(m.updatedAt || m.createdAt)}
-                            </span>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center space-x-1 shrink-0">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveKey(p.id)}
+                          disabled={card.loading || !card.apiKey.trim()}
+                          className={`flex-1 sm:flex-none min-h-[44px] lg:min-h-[38px] px-4 py-2 rounded-xl text-xs font-medium transition ${
+                            card.apiKey.trim() && !card.loading
+                              ? 'bg-accent hover:bg-accent-hover active:bg-accent-pressed text-white cursor-pointer'
+                              : 'bg-surface-3 text-faint cursor-not-allowed'
+                          }`}
+                        >
+                          {card.loading ? 'Verifying...' : 'Save & verify'}
+                        </button>
+
+                        {isConfigured && (
                           <button
                             type="button"
-                            onClick={() => handleStartEdit(m)}
-                            className="p-1.5 text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#2A2927] rounded-md transition cursor-pointer"
-                            title="Edit memory"
+                            onClick={() => handleRemoveKey(p.id)}
+                            disabled={card.loading}
+                            className="flex min-h-[44px] lg:min-h-[38px] items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface-1 hover:border-danger/50 hover:bg-danger/10 text-xs text-muted hover:text-danger transition cursor-pointer"
+                            title="Remove API key"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
+                            <span>Remove</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteMemoryId(m.id)}
-                            className="p-1.5 text-[#A8A59E] hover:text-red-400 hover:bg-red-500/10 rounded-md transition cursor-pointer"
-                            title="Delete memory"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-0.5">
+                      <a
+                        href={p.keyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-accent-text hover:text-text transition"
+                      >
+                        <span>Get a key</span>
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+
+                    {card.error && (
+                      <div className="flex items-center space-x-1.5 text-xs text-danger pt-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{card.error}</span>
+                      </div>
+                    )}
+
+                    {card.success && (
+                      <div className="flex items-center space-x-1.5 text-xs text-success pt-1">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>API key verified and saved securely.</span>
                       </div>
                     )}
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
+          </section>
+
+          {/* Long-Term Memory Section */}
+          <section
+            id="memory"
+            className="scroll-mt-24 bg-surface-2 border border-border rounded-[16px] p-5 space-y-5"
+          >
+            <div className="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl bg-surface-1 border border-border">
+                  <Brain className="w-4 h-4 text-accent-text" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-sm font-semibold text-text">Memory</h2>
+                    <span className="px-2 py-0.5 rounded-full bg-surface-1 border border-border text-[11px] text-muted">
+                      {memoriesLoaded ? `${memories.length} saved` : 'Loading...'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted mt-0.5">
+                    Framecode remembers helpful facts and preferences across chats. Stored locally in your browser&apos;s IndexedDB.
+                  </p>
+                </div>
+              </div>
+
+              {/* Use Memory Switch */}
+              <label className="flex items-center space-x-2 cursor-pointer shrink-0 select-none min-h-[44px] lg:min-h-0">
+                <span className="text-xs text-muted">Use memory</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={memoryOn}
+                  onClick={handleToggleMemoryEnabled}
+                  className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors cursor-pointer ${
+                    memoryOn ? 'bg-accent' : 'bg-border-strong'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-text transition-transform ${
+                      memoryOn ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </label>
             </div>
-          )}
-        </section>
+
+            {/* Add Memory Form */}
+            <form onSubmit={handleAddMemory} className="flex items-center space-x-2">
+              <input
+                type="text"
+                value={newMemoryText}
+                onChange={(e) => {
+                  setNewMemoryText(e.target.value);
+                  setMemoryError(null);
+                }}
+                maxLength={240}
+                placeholder="Add something to remember (e.g., Prefer dark kinetic typography)..."
+                className="flex-1 min-h-[44px] lg:min-h-[38px] bg-surface-1 border border-border rounded-xl px-3 py-2 text-base lg:text-xs text-text placeholder-muted focus:outline-none focus:border-accent"
+              />
+              <button
+                type="submit"
+                disabled={!newMemoryText.trim()}
+                className={`flex min-h-[44px] lg:min-h-[38px] items-center space-x-1 px-4 py-2 rounded-xl text-xs font-medium transition ${
+                  newMemoryText.trim()
+                    ? 'bg-accent hover:bg-accent-hover active:bg-accent-pressed text-white cursor-pointer'
+                    : 'bg-surface-3 text-faint cursor-not-allowed'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add</span>
+              </button>
+            </form>
+
+            {/* Actions Bar: Export / Import / Clear all */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleExportMemories}
+                  disabled={memories.length === 0}
+                  className="flex min-h-[44px] lg:min-h-[34px] items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface-1 hover:bg-surface-3 text-xs text-text transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3.5 h-3.5 text-muted" />
+                  <span>Export</span>
+                </button>
+
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleImportFile}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => importInputRef.current?.click()}
+                  className="flex min-h-[44px] lg:min-h-[34px] items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface-1 hover:bg-surface-3 text-xs text-text transition cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-muted" />
+                  <span>Import</span>
+                </button>
+              </div>
+
+              {memories.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearAll(true)}
+                  className="flex min-h-[44px] lg:min-h-[34px] items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-danger/40 bg-surface-1 hover:bg-danger/10 text-xs text-danger transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear all</span>
+                </button>
+              )}
+            </div>
+
+            {memoryError && (
+              <div className="flex items-center space-x-1.5 text-xs text-danger">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{memoryError}</span>
+              </div>
+            )}
+
+            {memoryNotice && (
+              <div className="flex items-center justify-between p-2.5 bg-surface-1 border border-border rounded-lg text-xs text-text">
+                <span>{memoryNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setMemoryNotice(null)}
+                  className="flex h-8 w-8 items-center justify-center text-muted hover:text-text cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Memories List */}
+            {memoriesLoaded && memories.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted">
+                No memories saved yet. Add preferences here or tell Framecode what to remember in chat.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {memories.map((m) => {
+                  const isEditing = editingId === m.id;
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3 bg-surface-1 border border-border rounded-xl space-y-2"
+                    >
+                      {isEditing ? (
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            maxLength={240}
+                            className="flex-1 min-h-[44px] lg:min-h-[34px] bg-surface-2 border border-border rounded-lg px-2.5 py-1.5 text-base lg:text-xs text-text focus:outline-none focus:border-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(m.id)}
+                            className="min-h-[44px] lg:min-h-[34px] px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-medium cursor-pointer"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditingText('');
+                            }}
+                            className="min-h-[44px] lg:min-h-[34px] px-3 py-1.5 rounded-lg border border-border bg-surface-2 text-xs text-muted hover:text-text cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <p className="text-xs text-text leading-relaxed break-words">
+                              {m.text}
+                            </p>
+                            <div className="flex items-center space-x-2 text-[10px] text-muted">
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-medium ${
+                                  m.source === 'ai'
+                                    ? 'bg-accent-soft text-accent-text'
+                                    : 'bg-surface-3 text-text'
+                                }`}
+                              >
+                                {m.source === 'ai' ? 'AI' : 'You'}
+                              </span>
+                              <span className="font-mono">
+                                {formatMemoryDate(m.updatedAt || m.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(m)}
+                              className="flex h-9 w-9 items-center justify-center text-muted hover:text-text hover:bg-surface-2 rounded-md transition cursor-pointer"
+                              title="Edit memory"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteMemoryId(m.id)}
+                              className="flex h-9 w-9 items-center justify-center text-muted hover:text-danger hover:bg-danger/10 rounded-md transition cursor-pointer"
+                              title="Delete memory"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
       </div>
 
       {/* Delete Memory Confirm Modal */}
       {deleteMemoryId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2A2927] border border-[#3A3835] rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-semibold text-[#FAF9F5]">Delete this memory?</h3>
-            <p className="text-xs text-[#A8A59E]">Framecode will no longer use this fact in future chats.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/80 backdrop-blur-xs">
+          <div className="bg-surface-2 border border-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-semibold text-text">Delete this memory?</h3>
+            <p className="text-xs text-muted">
+              Framecode will no longer use this fact in future chats.
+            </p>
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteMemoryId(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg border border-border bg-surface-1 text-xs font-medium text-text hover:bg-surface-3 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteMemory}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg bg-danger hover:bg-danger/90 text-xs font-medium text-white transition cursor-pointer"
               >
                 Delete
               </button>
@@ -712,22 +817,22 @@ export default function SettingsPage() {
 
       {/* Clear All Memories Confirm Modal */}
       {confirmClearAll && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2A2927] border border-[#3A3835] rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-semibold text-[#FAF9F5]">Clear all memories?</h3>
-            <p className="text-xs text-[#A8A59E]">This cannot be undone.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/80 backdrop-blur-xs">
+          <div className="bg-surface-2 border border-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-semibold text-text">Clear all memories?</h3>
+            <p className="text-xs text-muted">This cannot be undone.</p>
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
                 onClick={() => setConfirmClearAll(false)}
-                className="px-3.5 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg border border-border bg-surface-1 text-xs font-medium text-text hover:bg-surface-3 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmClearAll}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg bg-danger hover:bg-danger/90 text-xs font-medium text-white transition cursor-pointer"
               >
                 Clear all
               </button>

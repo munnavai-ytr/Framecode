@@ -43,20 +43,17 @@ export default function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Filters state
   const [selectedCategory, setSelectedCategory] = useState<LibraryCategory | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
 
-  // Preview Dialog state
   const [previewItem, setPreviewItem] = useState<{
     item: LibraryItem;
     url: string;
   } | null>(null);
 
-  // Delete Confirm Modal state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -94,7 +91,6 @@ export default function LibraryPage() {
     };
   }, []);
 
-  // Revoke preview dialog URL when closed
   const closePreview = () => {
     if (previewItem) {
       URL.revokeObjectURL(previewItem.url);
@@ -211,19 +207,15 @@ export default function LibraryPage() {
     }
   };
 
-  // Filter items
   const filteredItems = items.filter((item) => {
-    // Category filter
     if (selectedCategory !== 'all' && item.category !== selectedCategory) {
       return false;
     }
 
-    // Source filter
     if (sourceFilter !== 'all' && item.source !== sourceFilter) {
       return false;
     }
 
-    // Date range filter
     if (fromDate) {
       const itemTime = new Date(item.createdAt).getTime();
       const startOfDay = new Date(fromDate).setHours(0, 0, 0, 0);
@@ -238,7 +230,6 @@ export default function LibraryPage() {
     return true;
   });
 
-  // Sort items
   filteredItems.sort((a, b) => {
     const timeA = new Date(a.createdAt).getTime();
     const timeB = new Date(b.createdAt).getTime();
@@ -255,14 +246,15 @@ export default function LibraryPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#1F1E1D] text-[#FAF9F5] flex flex-col">
-      {/* Header */}
-      <header className="border-b border-[#3A3835] bg-[#2A2927] px-4 py-4 sm:px-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+    <div className="min-h-screen bg-bg text-text flex flex-col">
+      {/* Sticky Header */}
+      <header className="sticky top-0 z-20 h-16 border-b border-border bg-surface-1/90 backdrop-blur-xs px-4 sm:px-8 flex items-center">
+        <div className="max-w-[1400px] mx-auto w-full flex items-center justify-between">
+          <div className="flex items-center space-x-3">
             <Link
               href="/"
-              className="p-2 rounded-lg border border-[#3A3835] bg-[#1F1E1D] hover:bg-[#33322F] text-[#FAF9F5] transition"
+              className="flex h-11 w-11 lg:h-9 lg:w-9 items-center justify-center rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-border-strong text-text transition"
+              aria-label="Back to chat"
             >
               <ArrowLeft className="w-4 h-4" />
             </Link>
@@ -281,7 +273,7 @@ export default function LibraryPage() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-[#D97757] hover:bg-[#D97757]/90 text-white font-medium text-xs transition cursor-pointer disabled:opacity-50"
+              className="flex min-h-[44px] lg:min-h-[38px] items-center space-x-2 px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover active:bg-accent-pressed text-white font-medium text-xs transition cursor-pointer disabled:opacity-50"
             >
               {uploading ? (
                 <>
@@ -301,16 +293,16 @@ export default function LibraryPage() {
 
       {/* Error alert banner */}
       {errorMessage && (
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-8 pt-4">
-          <div className="flex items-center justify-between p-3 bg-red-950/40 border border-red-900/50 rounded-xl text-xs text-red-300">
+        <div className="max-w-[1400px] mx-auto w-full px-4 sm:px-8 pt-4">
+          <div className="flex items-center justify-between p-3 bg-danger/10 border border-danger/40 rounded-xl text-xs text-danger">
             <div className="flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+              <AlertCircle className="w-4 h-4 shrink-0 text-danger" />
               <span>{errorMessage}</span>
             </div>
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="text-red-400 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center text-danger hover:text-text cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -319,12 +311,12 @@ export default function LibraryPage() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 space-y-6">
-        {/* Filters Bar */}
-        <div className="p-4 bg-[#2A2927] border border-[#3A3835] rounded-xl space-y-4">
+      <main className="flex-1 max-w-[1400px] w-full mx-auto p-4 sm:p-8 space-y-6">
+        {/* Sticky Filters Bar */}
+        <div className="sticky top-16 z-10 p-4 bg-surface-2/95 backdrop-blur-xs border border-border rounded-[16px] space-y-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             {/* Category Chips */}
-            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 lg:pb-0">
               {categoriesList.map((cat) => {
                 const isActive = selectedCategory === cat.id;
                 return (
@@ -332,14 +324,14 @@ export default function LibraryPage() {
                     key={cat.id}
                     type="button"
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer ${
+                    className={`flex min-h-[40px] lg:min-h-[34px] items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer ${
                       isActive
-                        ? 'bg-[#33322F] text-[#FAF9F5] border border-[#3A3835]'
-                        : 'text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#1F1E1D]'
+                        ? 'bg-surface-3 text-text border border-border-strong'
+                        : 'border border-transparent text-muted hover:text-text hover:bg-surface-1'
                     }`}
                   >
                     <span>{cat.label}</span>
-                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[#D97757]" />}
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-accent-text" />}
                   </button>
                 );
               })}
@@ -347,17 +339,16 @@ export default function LibraryPage() {
 
             {/* Source Toggle, Date Range & Sort */}
             <div className="flex flex-wrap items-center gap-3 text-xs">
-              {/* Source Toggle */}
-              <div className="flex items-center bg-[#1F1E1D] border border-[#3A3835] rounded-lg p-0.5">
+              <div className="flex items-center bg-surface-1 border border-border rounded-lg p-0.5">
                 {(['all', 'upload', 'ai'] as SourceFilter[]).map((src) => (
                   <button
                     key={src}
                     type="button"
                     onClick={() => setSourceFilter(src)}
-                    className={`px-2.5 py-1 rounded-md capitalize transition ${
+                    className={`min-h-[36px] lg:min-h-[28px] px-2.5 py-1 rounded-md capitalize transition cursor-pointer ${
                       sourceFilter === src
-                        ? 'bg-[#2A2927] text-[#FAF9F5] font-medium'
-                        : 'text-[#A8A59E] hover:text-[#FAF9F5]'
+                        ? 'bg-surface-2 text-text font-medium'
+                        : 'text-muted hover:text-text'
                     }`}
                   >
                     {src === 'upload' ? 'Uploads' : src === 'ai' ? 'AI Outputs' : 'All'}
@@ -365,29 +356,27 @@ export default function LibraryPage() {
                 ))}
               </div>
 
-              {/* Date From & To */}
               <div className="flex items-center space-x-2">
-                <span className="text-[#A8A59E]">From:</span>
+                <span className="text-muted">From:</span>
                 <input
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="bg-[#1F1E1D] border border-[#3A3835] rounded-lg px-2 py-1 text-xs text-[#FAF9F5] focus:outline-none focus:border-[#D97757]"
+                  className="min-h-[38px] lg:min-h-[32px] bg-surface-1 border border-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none focus:border-accent"
                 />
-                <span className="text-[#A8A59E]">To:</span>
+                <span className="text-muted">To:</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="bg-[#1F1E1D] border border-[#3A3835] rounded-lg px-2 py-1 text-xs text-[#FAF9F5] focus:outline-none focus:border-[#D97757]"
+                  className="min-h-[38px] lg:min-h-[32px] bg-surface-1 border border-border rounded-lg px-2 py-1 text-xs text-text focus:outline-none focus:border-accent"
                 />
               </div>
 
-              {/* Sort Dropdown */}
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                className="bg-[#1F1E1D] border border-[#3A3835] rounded-lg px-2.5 py-1 text-xs text-[#FAF9F5] focus:outline-none focus:border-[#D97757]"
+                className="min-h-[38px] lg:min-h-[32px] bg-surface-1 border border-border rounded-lg px-2.5 py-1 text-xs text-text focus:outline-none focus:border-accent"
               >
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
@@ -395,28 +384,28 @@ export default function LibraryPage() {
             </div>
           </div>
 
-          <div className="text-xs text-[#A8A59E]">
+          <div className="text-xs text-muted">
             {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'} matching
           </div>
         </div>
 
         {/* Grid or Empty State */}
         {loading ? (
-          <div className="py-20 text-center text-xs text-[#A8A59E]">Loading Library...</div>
+          <div className="py-20 text-center text-xs text-muted">Loading Library...</div>
         ) : items.length === 0 ? (
           <div className="py-24 text-center space-y-3">
-            <Film className="w-12 h-12 text-[#3A3835] mx-auto" />
-            <p className="text-sm font-medium text-[#FAF9F5]">Nothing here yet</p>
-            <p className="text-xs text-[#A8A59E] max-w-sm mx-auto">
+            <Film className="w-12 h-12 text-border-strong mx-auto" />
+            <p className="text-sm font-medium text-text">Nothing here yet</p>
+            <p className="text-xs text-muted max-w-sm mx-auto">
               Videos you make and files you upload will appear here.
             </p>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="py-24 text-center space-y-3">
-            <p className="text-sm font-medium text-[#FAF9F5]">No items match these filters.</p>
+            <p className="text-sm font-medium text-text">No items match these filters.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 min-[1440px]:grid-cols-5 gap-4">
             {filteredItems.map((item) => (
               <LibraryCard
                 key={item.id}
@@ -432,22 +421,28 @@ export default function LibraryPage() {
 
       {/* In-page Video / Image Preview Dialog */}
       {previewItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-          <div className="bg-[#2A2927] border border-[#3A3835] rounded-2xl max-w-3xl w-full p-4 overflow-hidden flex flex-col space-y-3 shadow-2xl">
-            <div className="flex items-center justify-between pb-2 border-b border-[#3A3835]">
-              <span className="text-sm font-medium text-[#FAF9F5] truncate">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/85 backdrop-blur-xs"
+          onClick={closePreview}
+        >
+          <div
+            className="bg-surface-2 border border-border rounded-2xl max-w-3xl w-full p-4 overflow-hidden flex flex-col space-y-3 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-border">
+              <span className="text-sm font-medium text-text truncate">
                 {previewItem.item.name}
               </span>
               <button
                 type="button"
                 onClick={closePreview}
-                className="p-1 rounded-lg text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#3A3835] transition"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-text hover:bg-surface-3 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex items-center justify-center bg-[#1F1E1D] rounded-xl overflow-hidden min-h-[300px] max-h-[75vh]">
+            <div className="flex items-center justify-center bg-surface-1 rounded-xl overflow-hidden min-h-[300px] max-h-[75vh]">
               {previewItem.item.category === 'video' ? (
                 <video
                   src={previewItem.url}
@@ -470,22 +465,22 @@ export default function LibraryPage() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2A2927] border border-[#3A3835] rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-semibold text-[#FAF9F5]">Delete this item?</h3>
-            <p className="text-xs text-[#A8A59E]">This cannot be undone.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/80 backdrop-blur-xs">
+          <div className="bg-surface-2 border border-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-semibold text-text">Delete this item?</h3>
+            <p className="text-xs text-muted">This cannot be undone.</p>
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteConfirmId(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg border border-border bg-surface-1 text-xs font-medium text-text hover:bg-surface-3 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleDeleteItem(deleteConfirmId)}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-xs font-medium text-white transition cursor-pointer"
+                className="min-h-[40px] px-3.5 py-1.5 rounded-lg bg-danger hover:bg-danger/90 text-xs font-medium text-white transition cursor-pointer"
               >
                 Delete
               </button>
@@ -512,17 +507,19 @@ function LibraryCard({
 
   useEffect(() => {
     let active = true;
+    let createdUrl: string | null = null;
     if (item.hasThumb) {
       getThumb(item.id).then((blob) => {
         if (active && blob) {
-          setThumbUrl(URL.createObjectURL(blob));
+          createdUrl = URL.createObjectURL(blob);
+          setThumbUrl(createdUrl);
         }
       });
     }
     return () => {
       active = false;
-      if (thumbUrl) {
-        URL.revokeObjectURL(thumbUrl);
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
       }
     };
   }, [item.id, item.hasThumb]);
@@ -544,18 +541,18 @@ function LibraryCard({
   const renderCategoryIcon = () => {
     switch (item.category) {
       case 'video':
-        return <Film className="w-8 h-8 text-[#D97757]" />;
+        return <Film className="w-8 h-8 text-accent-text" />;
       case 'image':
-        return <ImageIcon className="w-8 h-8 text-blue-400" />;
+        return <ImageIcon className="w-8 h-8 text-accent" />;
       case 'pdf':
-        return <FileText className="w-8 h-8 text-red-400" />;
+        return <FileText className="w-8 h-8 text-danger" />;
       case 'document':
-        return <FileText className="w-8 h-8 text-emerald-400" />;
+        return <FileText className="w-8 h-8 text-success" />;
       default:
         return item.name.endsWith('.tsx') || item.name.endsWith('.js') ? (
-          <FileCode className="w-8 h-8 text-purple-400" />
+          <FileCode className="w-8 h-8 text-accent-text" />
         ) : (
-          <File className="w-8 h-8 text-[#A8A59E]" />
+          <File className="w-8 h-8 text-muted" />
         );
     }
   };
@@ -563,11 +560,11 @@ function LibraryCard({
   const canOpen = item.category === 'video' || item.category === 'image' || item.category === 'pdf';
 
   return (
-    <div className="bg-[#2A2927] border border-[#3A3835] rounded-xl overflow-hidden flex flex-col justify-between group hover:border-[#484542] transition">
+    <div className="bg-surface-2 border border-border rounded-[16px] overflow-hidden flex flex-col justify-between group hover:border-border-strong transition">
       {/* Thumbnail or Fallback Icon */}
       <div
         onClick={() => canOpen && onOpen()}
-        className={`relative w-full aspect-video bg-[#1F1E1D] flex items-center justify-center overflow-hidden ${
+        className={`relative w-full aspect-video bg-surface-1 flex items-center justify-center overflow-hidden ${
           canOpen ? 'cursor-pointer' : ''
         }`}
       >
@@ -581,8 +578,8 @@ function LibraryCard({
         <span
           className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider ${
             item.source === 'ai'
-              ? 'bg-[#D97757]/90 text-white'
-              : 'bg-[#3A3835]/90 text-[#FAF9F5]'
+              ? 'bg-accent text-white'
+              : 'bg-surface-3 text-text border border-border'
           }`}
         >
           {item.source === 'ai' ? 'AI' : 'Upload'}
@@ -592,28 +589,25 @@ function LibraryCard({
       {/* Info & Actions */}
       <div className="p-3 space-y-2">
         <div className="space-y-0.5">
-          <h4
-            className="text-xs font-semibold text-[#FAF9F5] truncate"
-            title={item.name}
-          >
+          <h4 className="text-xs font-semibold text-text truncate" title={item.name}>
             {item.name}
           </h4>
-          <div className="flex items-center justify-between text-[11px] text-[#A8A59E]">
+          <div className="flex items-center justify-between text-[11px] text-muted">
             <span className="capitalize">{item.category}</span>
             <span>{formatFileSize(item.size)}</span>
           </div>
-          <div className="text-[10px] text-[#A8A59E]/70 font-mono">
+          <div className="text-[10px] text-faint font-mono">
             {formatDate(item.createdAt)}
           </div>
         </div>
 
         {/* Actions bar */}
-        <div className="flex items-center justify-between pt-2 border-t border-[#3A3835]">
+        <div className="flex items-center justify-between pt-2 border-t border-border">
           {canOpen ? (
             <button
               type="button"
               onClick={onOpen}
-              className="flex items-center space-x-1 text-xs text-[#FAF9F5] hover:text-[#D97757] transition cursor-pointer"
+              className="flex min-h-[36px] items-center space-x-1 text-xs text-text hover:text-accent-text transition cursor-pointer"
             >
               <Eye className="w-3.5 h-3.5" />
               <span>Open</span>
@@ -622,11 +616,11 @@ function LibraryCard({
             <div />
           )}
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
             <button
               type="button"
               onClick={onDownload}
-              className="p-1.5 text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#1F1E1D] rounded-md transition cursor-pointer"
+              className="flex h-9 w-9 items-center justify-center text-muted hover:text-text hover:bg-surface-1 rounded-md transition cursor-pointer"
               title="Download"
             >
               <Download className="w-3.5 h-3.5" />
@@ -634,7 +628,7 @@ function LibraryCard({
             <button
               type="button"
               onClick={onDelete}
-              className="p-1.5 text-[#A8A59E] hover:text-red-400 hover:bg-red-500/10 rounded-md transition cursor-pointer"
+              className="flex h-9 w-9 items-center justify-center text-muted hover:text-danger hover:bg-danger/10 rounded-md transition cursor-pointer"
               title="Delete"
             >
               <Trash2 className="w-3.5 h-3.5" />

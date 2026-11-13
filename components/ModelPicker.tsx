@@ -1,42 +1,58 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ModelOption, ModelSelection, ProviderId } from '@/types/framecode';
-import { ProviderLogo } from './ProviderLogo';
-import { Search, Eye, Key, Check, X } from 'lucide-react';
+import {
+  ModelOption,
+  ModelSelection,
+  ImageSelection,
+  ProviderId,
+} from '@/types/framecode';
+import { ModelLogo, ProviderLogo } from './ProviderLogo';
+import { Search, Eye, Key, RefreshCw, X, Sparkles } from 'lucide-react';
 import { useKeyStatus } from '@/lib/keyStatus';
 import {
   getCachedModels,
   getStaleCachedModels,
   setCachedModels,
+  clearModelsCache,
 } from '@/lib/modelsCache';
 
 interface ModelPickerProps {
   isOpen: boolean;
   onClose: () => void;
   selection: ModelSelection | null;
+  imageSelection: ImageSelection | null;
+  activeProviderOverride?: ProviderId | null;
   onSelect: (selection: ModelSelection) => void;
-  onOpenSettings: () => void;
+  onSelectImage: (imageSelection: ImageSelection | null) => void;
+  onOpenApiKeys: () => void;
 }
 
-const TAB_LABELS: Record<ProviderId, string> = {
+const PROVIDER_LABELS: Record<ProviderId, string> = {
   claude: 'Claude',
   openrouter: 'OpenRouter',
   gemini: 'Gemini',
 };
 
-const PROVIDER_LIST: ProviderId[] = ['claude', 'openrouter', 'gemini'];
+type ModelCategorySegment = 'chat' | 'images';
 
 const ModelPickerInner: React.FC<ModelPickerProps> = ({
   isOpen,
   onClose,
   selection,
+  imageSelection,
+  activeProviderOverride,
   onSelect,
-  onOpenSettings,
+  onSelectImage,
+  onOpenApiKeys,
 }) => {
   const { status: keyStatus } = useKeyStatus();
 
-  const [activeTab, setActiveTab] = useState<ProviderId>(selection?.provider || 'claude');
+  const resolvedProvider: ProviderId =
+    activeProviderOverride || selection?.provider || 'claude';
+
+  const [activeTab, setActiveTab] = useState<ProviderId>(resolvedProvider);
+  const [segment, setSegment] = useState<ModelCategorySegment>('chat');
   const [search, setSearch] = useState('');
   const [models, setModels] = useState<ModelOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,14 +61,9 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
-  const activeTabRef = useRef<ProviderId>(activeTab);
-
-  useEffect(() => {
-    activeTabRef.current = activeTab;
-  }, [activeTab]);
 
   const loadModelsForTab = useCallback(
-    async (tab: ProviderId, isConfigured: boolean) => {
+    async (tab: ProviderId, isConfigured: boolean, bypassCache = false) => {
       if (!isConfigured) {
         setModels([]);
         setError(null);
@@ -62,14 +73,18 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
       }
 
       const reqId = ++requestIdRef.current;
-      const freshCache = getCachedModels(tab);
-      const fallbackCache = freshCache || getStaleCachedModels(tab);
+      if (bypassCache) {
+        clearModelsCache(tab);
+      }
+
+      const freshCache = bypassCache ? null : getCachedModels(tab);
+      const fallbackCache = bypassCache ? null : freshCache || getStaleCachedModels(tab);
 
       if (fallbackCache && fallbackCache.length > 0) {
         setModels(fallbackCache);
         setLoading(false);
       } else {
-        setModels([]);
+        if (!bypassCache) setModels([]);
         setLoading(true);
       }
 
@@ -117,7 +132,8 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
     const initOnOpen = async () => {
       await Promise.resolve();
       if (!active) return;
-      const targetTab = selection?.provider || activeTabRef.current;
+      const targetTab: ProviderId =
+        activeProviderOverride || selection?.provider || 'claude';
       setActiveTab(targetTab);
       await loadModelsForTab(targetTab, Boolean(keyStatus[targetTab]?.connected));
     };
@@ -126,26 +142,15 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, selection?.provider, keyStatus, loadModelsForTab]);
+  }, [isOpen, activeProviderOverride, selection?.provider, keyStatus, loadModelsForTab]);
 
-  const handleTabChange = (tab: ProviderId) => {
-    if (tab === activeTab) return;
-    setActiveTab(tab);
-    setSearch('');
-    setError(null);
-    setRefreshFailedWithCache(false);
-    loadModelsForTab(tab, Boolean(keyStatus[tab]?.connected));
-  };
-
-  const handleRetry = () => {
-    loadModelsForTab(activeTab, Boolean(keyStatus[activeTab]?.connected));
-  };
-
-  // Close on pointerdown outside as well as on mousedown, and on Escape
   useEffect(() => {
     if (!isOpen) return;
 
     const handleOutside = (e: MouseEvent | PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-switcher-pill]')) {
+        return;
+      }
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         onClose();
       }
@@ -170,130 +175,194 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
 
   if (!isOpen) return null;
 
-  // Hide image-generation-only models from chat/video picker
-  const chatCapableModels = models.filter((m) => !m.imageOutput);
-
-  const query = search.trim().toLowerCase();
-  const filteredModels = chatCapableModels.filter((m) => {
-    if (!query) return true;
-    return (
-      m.name.toLowerCase().includes(query) ||
-      m.id.toLowerCase().includes(query)
-    );
-  });
-
-  const visibleModels = filteredModels.slice(0, 100);
   const isTabConfigured = Boolean(keyStatus[activeTab]?.connected);
+  const last4 = keyStatus[activeTab]?.last4;
+  const query = search.trim().toLowerCase();
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div
-        ref={containerRef}
-        className="w-full sm:max-w-md bg-[#2A2927] border border-[#3A3835] rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#3A3835]">
-          <h3 className="text-sm font-medium text-[#FAF9F5]">Select Model</h3>
+  const chatCapableModels = models.filter((m) => !m.imageOutput);
+  const filteredChatModels = chatCapableModels.filter((m) => {
+    if (!query) return true;
+    return m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
+  });
+  const visibleChatModels = filteredChatModels.slice(0, 100);
+
+  const imageCapableModels = models.filter((m) => Boolean(m.imageOutput));
+  const filteredImageModels = imageCapableModels.filter((m) => {
+    if (!query) return true;
+    return m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
+  });
+  const visibleImageModels = filteredImageModels.slice(0, 100);
+
+  const handleRefresh = () => {
+    loadModelsForTab(activeTab, isTabConfigured, true);
+  };
+
+  const sheetCard = (
+    <div
+      ref={containerRef}
+      className="flex w-full sm:max-w-[520px] lg:w-[380px] lg:max-w-[380px] max-h-[85dvh] lg:max-h-[520px] flex-col rounded-t-[20px] lg:rounded-[16px] border-t sm:border border-border bg-surface-1 shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom)] lg:pb-0"
+    >
+      <div className="pt-2.5 pb-1 lg:hidden">
+        <div className="mx-auto h-1 w-10 rounded-full bg-border-strong" />
+      </div>
+
+      <div className="flex items-start justify-between px-4 pt-3 pb-2.5">
+        <div className="min-w-0 pr-2">
+          <h3 className="text-sm font-semibold text-text">Choose a model</h3>
+          <p className="text-xs text-muted mt-0.5">
+            Select the AI model that best fits your task
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={!isTabConfigured || loading}
+            className="flex h-11 w-11 lg:h-8 lg:w-8 items-center justify-center rounded-full border border-border bg-surface-2 hover:bg-surface-3 text-muted hover:text-text transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Refresh model list"
+            title="Refresh models"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-accent-text' : ''}`} />
+          </button>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-md text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#3A3835] transition cursor-pointer"
+            className="flex h-11 w-11 lg:hidden items-center justify-center rounded-full text-muted hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
+            aria-label="Close model picker"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="px-4 pb-3 space-y-2.5 border-b border-border">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models..."
+            className="w-full min-h-[44px] lg:min-h-[36px] bg-surface-2 border border-border rounded-full pl-9 pr-4 py-1.5 text-xs text-text placeholder:text-faint focus:outline-none focus:border-accent"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-[10px] bg-surface-2 border border-border">
+          <button
+            type="button"
+            onClick={() => setSegment('chat')}
+            className={`min-h-[44px] lg:min-h-[30px] rounded-[7px] px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+              segment === 'chat'
+                ? 'bg-surface-3 text-text border border-border'
+                : 'text-muted hover:text-text border border-transparent'
+            }`}
+          >
+            Chat &amp; video
+          </button>
+          <button
+            type="button"
+            onClick={() => setSegment('images')}
+            className={`min-h-[44px] lg:min-h-[30px] rounded-[7px] px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+              segment === 'images'
+                ? 'bg-surface-3 text-text border border-border'
+                : 'text-muted hover:text-text border border-transparent'
+            }`}
+          >
+            Images
           </button>
         </div>
 
-        {/* Provider Tabs */}
-        <div className="grid grid-cols-3 gap-1 p-2 border-b border-[#3A3835] bg-[#1F1E1D]">
-          {PROVIDER_LIST.map((p) => {
-            const isConfig = Boolean(keyStatus[p]?.connected);
-            const isActive = activeTab === p;
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => handleTabChange(p)}
-                className={`flex items-center justify-center space-x-2 py-2 px-3 rounded-lg text-xs font-medium transition cursor-pointer ${
-                  isActive
-                    ? 'bg-[#2A2927] text-[#FAF9F5] border border-[#3A3835]'
-                    : 'text-[#A8A59E] hover:text-[#FAF9F5] hover:bg-[#2A2927]/50'
-                }`}
-              >
-                <ProviderLogo provider={p} className="w-3.5 h-3.5" />
-                <span>{TAB_LABELS[p]}</span>
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isConfig ? 'bg-emerald-500' : 'bg-[#3A3835]'
-                  }`}
-                />
-              </button>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onOpenApiKeys();
+          }}
+          className="flex w-full min-h-[44px] lg:min-h-[28px] items-center justify-between px-2 py-1 rounded-[8px] hover:bg-surface-2 text-xs transition-colors cursor-pointer"
+        >
+          <span className="flex items-center gap-2 text-muted truncate">
+            <ProviderLogo provider={activeTab} size={14} />
+            <span className="truncate">
+              {isTabConfigured
+                ? `Using ${PROVIDER_LABELS[activeTab]}${last4 ? ` - key ending ${last4}` : ''}`
+                : `No ${PROVIDER_LABELS[activeTab]} key configured`}
+            </span>
+          </span>
+          <span className="text-accent-text font-medium shrink-0 ml-2">Switch</span>
+        </button>
 
-        {/* Search */}
-        <div className="p-3 border-b border-[#3A3835]">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-[#A8A59E]" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search models..."
-              className="w-full bg-[#1F1E1D] border border-[#3A3835] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#FAF9F5] placeholder-[#A8A59E] focus:outline-none focus:border-[#D97757]"
-            />
+        {refreshFailedWithCache && (
+          <div className="flex items-center justify-between px-2 text-[11px] text-muted">
+            <span>Couldn&apos;t refresh</span>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="text-accent-text hover:underline cursor-pointer"
+            >
+              Retry
+            </button>
           </div>
-          {refreshFailedWithCache && (
-            <div className="mt-2 flex items-center justify-between text-[11px] text-[#A8A59E]">
-              <span>Couldn&apos;t refresh</span>
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="text-[#D97757] hover:underline cursor-pointer"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-        </div>
+        )}
+      </div>
 
-        {/* Model List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-[220px]">
-          {!isTabConfigured ? (
-            <div className="m-2 p-3 bg-[#1F1E1D] border border-amber-900/40 rounded-lg text-xs text-[#A8A59E] space-y-2">
-              <p>No API key configured for {TAB_LABELS[activeTab]}. Add key to enable.</p>
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 min-h-[220px]">
+        {segment === 'chat' ? (
+          !isTabConfigured ? (
+            <div className="m-1.5 p-4 bg-surface-2 border border-border rounded-[12px] text-xs text-muted space-y-3">
+              <p>
+                No API key configured for {PROVIDER_LABELS[activeTab]}. Add your key to browse models.
+              </p>
               <button
                 type="button"
                 onClick={() => {
                   onClose();
-                  onOpenSettings();
+                  onOpenApiKeys();
                 }}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#D97757] hover:bg-[#D97757]/90 text-white font-medium rounded-md text-xs transition cursor-pointer"
+                className="inline-flex min-h-[44px] lg:min-h-[34px] items-center gap-1.5 px-3.5 py-1.5 bg-accent hover:bg-accent-hover active:bg-accent-pressed text-white font-medium rounded-[8px] text-xs transition-colors cursor-pointer"
               >
                 <Key className="w-3.5 h-3.5" />
-                <span>Add Key in Settings</span>
+                <span>Add API Key</span>
               </button>
             </div>
           ) : loading ? (
-            <div className="p-8 text-center text-xs text-[#A8A59E]">Loading models...</div>
+            <div className="space-y-2 p-1">
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-3 p-2.5 rounded-[12px] border border-border bg-surface-2 animate-pulse"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-8 h-8 rounded-full bg-surface-3 shrink-0" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-3.5 w-36 rounded bg-surface-3" />
+                      <div className="h-2.5 w-24 rounded bg-surface-3/70" />
+                    </div>
+                  </div>
+                  <div className="w-5 h-5 rounded-full bg-surface-3 shrink-0" />
+                </div>
+              ))}
+            </div>
           ) : error ? (
-            <div className="p-6 text-center text-xs text-[#A8A59E] space-y-3">
-              <p className="text-red-400 break-words">{error}</p>
+            <div className="p-6 text-center text-xs text-muted space-y-3">
+              <p className="text-danger break-words">{error}</p>
               <button
                 type="button"
-                onClick={handleRetry}
-                className="inline-flex items-center px-3 py-1.5 bg-[#3A3835] hover:bg-[#484542] text-[#FAF9F5] rounded-md text-xs font-medium transition cursor-pointer"
+                onClick={handleRefresh}
+                className="inline-flex min-h-[44px] lg:min-h-[34px] items-center px-3.5 py-1.5 bg-surface-3 hover:bg-border text-text rounded-[8px] text-xs font-medium transition-colors cursor-pointer"
               >
                 Retry
               </button>
             </div>
           ) : chatCapableModels.length === 0 ? (
-            <div className="p-8 text-center text-xs text-[#A8A59E]">This account returned no models.</div>
-          ) : filteredModels.length === 0 ? (
-            <div className="p-8 text-center text-xs text-[#A8A59E]">No matching models found</div>
+            <div className="p-8 text-center text-xs text-muted">
+              This account returned no models.
+            </div>
+          ) : filteredChatModels.length === 0 ? (
+            <div className="p-8 text-center text-xs text-muted">No matching models found</div>
           ) : (
             <>
-              {visibleModels.map((m) => {
+              {visibleChatModels.map((m) => {
                 const isSelected =
                   selection?.provider === activeTab && selection?.modelId === m.id;
                 return (
@@ -310,38 +379,195 @@ const ModelPickerInner: React.FC<ModelPickerProps> = ({
                       });
                       onClose();
                     }}
-                    className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left text-xs transition cursor-pointer ${
+                    className={`w-full min-h-[56px] flex items-center justify-between gap-3 p-2.5 rounded-[12px] border text-left text-xs transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-[#1F1E1D] text-[#FAF9F5] border border-[#3A3835]'
-                        : 'hover:bg-[#1F1E1D]/60 text-[#A8A59E] hover:text-[#FAF9F5]'
+                        ? 'bg-surface-3 border-accent text-text'
+                        : 'bg-surface-2/50 border-transparent hover:bg-surface-2 hover:border-border text-muted hover:text-text'
                     }`}
                   >
-                    <div className="flex flex-col space-y-0.5">
-                      <div className="font-medium text-[#FAF9F5] flex items-center space-x-2">
-                        <span>{m.name}</span>
-                        {m.vision && (
-                          <span className="flex items-center space-x-1 px-1.5 py-0.5 bg-[#3A3835] text-[10px] text-[#FAF9F5] rounded">
-                            <Eye className="w-3 h-3 text-[#D97757]" />
-                            <span>Vision</span>
-                          </span>
-                        )}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <ModelLogo modelId={m.id} provider={activeTab} size={32} />
+                      <div className="flex flex-col min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium text-text truncate">{m.name}</span>
+                          {m.vision && (
+                            <span className="inline-flex shrink-0 items-center gap-1 px-1.5 py-0.5 bg-surface-3 border border-border text-[10px] text-muted rounded">
+                              <Eye className="w-2.5 h-2.5 text-accent-text" />
+                              <span>Vision</span>
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-faint font-mono truncate">{m.id}</span>
                       </div>
-                      <span className="text-[11px] text-[#A8A59E] font-mono">{m.id}</span>
                     </div>
-                    {isSelected && <Check className="w-4 h-4 text-[#D97757]" />}
+
+                    <div
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                        isSelected
+                          ? 'border-accent bg-accent'
+                          : 'border-border-strong bg-surface-1'
+                      }`}
+                    >
+                      {isSelected && <span className="h-2 w-2 rounded-full bg-white" />}
+                    </div>
                   </button>
                 );
               })}
-              {filteredModels.length > 100 && (
-                <div className="p-3 text-center text-[11px] text-[#A8A59E]/70 select-none">
+
+              {filteredChatModels.length > 100 && (
+                <div className="p-3 text-center text-[11px] text-faint select-none">
                   Showing first 100. Search to narrow.
                 </div>
               )}
             </>
-          )}
-        </div>
+          )
+        ) : (
+          <div className="space-y-1.5">
+            <div className="px-2 py-1 text-[11px] text-faint">
+              {activeTab === 'claude'
+                ? "Claude can't create images"
+                : `Images use ${PROVIDER_LABELS[activeTab]}`}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onSelectImage(null);
+                onClose();
+              }}
+              className={`w-full min-h-[56px] flex items-center justify-between gap-3 p-2.5 rounded-[12px] border text-left text-xs transition-colors cursor-pointer ${
+                imageSelection === null
+                  ? 'bg-surface-3 border-accent text-text'
+                  : 'bg-surface-2/50 border-transparent hover:bg-surface-2 hover:border-border text-muted hover:text-text'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-3 text-accent-text">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-medium text-text">
+                    Design with code (no image model)
+                  </div>
+                  <div className="text-[11px] text-faint">
+                    Render crisp vector &amp; typography graphics with Remotion
+                  </div>
+                </div>
+              </div>
+              <div
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  imageSelection === null
+                    ? 'border-accent bg-accent'
+                    : 'border-border-strong bg-surface-1'
+                }`}
+              >
+                {imageSelection === null && <span className="h-2 w-2 rounded-full bg-white" />}
+              </div>
+            </button>
+
+            {activeTab !== 'claude' && (
+              <>
+                {!isTabConfigured ? (
+                  <div className="m-1.5 p-3.5 bg-surface-2 border border-border rounded-[12px] text-xs text-muted space-y-2.5">
+                    <p>Add a {PROVIDER_LABELS[activeTab]} API key to list image models.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenApiKeys();
+                      }}
+                      className="inline-flex min-h-[44px] lg:min-h-[34px] items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white font-medium rounded-[8px] text-xs transition-colors cursor-pointer"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Add API Key</span>
+                    </button>
+                  </div>
+                ) : loading ? (
+                  <div className="space-y-2 p-1">
+                    {Array.from({ length: 3 }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-3 p-2.5 rounded-[12px] border border-border bg-surface-2 animate-pulse"
+                      >
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="w-8 h-8 rounded-full bg-surface-3 shrink-0" />
+                          <div className="space-y-1.5 flex-1">
+                            <div className="h-3.5 w-32 rounded bg-surface-3" />
+                            <div className="h-2.5 w-20 rounded bg-surface-3/70" />
+                          </div>
+                        </div>
+                        <div className="w-5 h-5 rounded-full bg-surface-3 shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                ) : filteredImageModels.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-faint">
+                    {imageCapableModels.length === 0
+                      ? `No dedicated image models returned by ${PROVIDER_LABELS[activeTab]}.`
+                      : 'No matching image models found.'}
+                  </div>
+                ) : (
+                  visibleImageModels.map((m) => {
+                    const isSelected =
+                      imageSelection?.provider === activeTab &&
+                      imageSelection?.modelId === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectImage({
+                            provider: activeTab,
+                            modelId: m.id,
+                            modelName: m.name,
+                          });
+                          onClose();
+                        }}
+                        className={`w-full min-h-[56px] flex items-center justify-between gap-3 p-2.5 rounded-[12px] border text-left text-xs transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-surface-3 border-accent text-text'
+                            : 'bg-surface-2/50 border-transparent hover:bg-surface-2 hover:border-border text-muted hover:text-text'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <ModelLogo modelId={m.id} provider={activeTab} size={32} />
+                          <div className="flex flex-col min-w-0 flex-1 space-y-0.5">
+                            <span className="font-medium text-text truncate">{m.name}</span>
+                            <span className="text-[11px] text-faint font-mono truncate">{m.id}</span>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                            isSelected
+                              ? 'border-accent bg-accent'
+                              : 'border-border-strong bg-surface-1'
+                          }`}
+                        >
+                          {isSelected && <span className="h-2 w-2 rounded-full bg-white" />}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-bg/75 backdrop-blur-xs lg:hidden">
+        {sheetCard}
+      </div>
+
+      <div className="hidden lg:block lg:absolute lg:bottom-full lg:left-0 lg:mb-2 lg:z-40">
+        {sheetCard}
+      </div>
+    </>
   );
 };
 

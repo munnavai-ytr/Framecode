@@ -27,31 +27,31 @@ const TaskRowItemInner: React.FC<TaskRowItemProps> = ({ task }) => {
 
   return (
     <div
-      className={`w-full my-1.5 overflow-hidden rounded-[12px] border bg-[#2A2927]/60 transition-colors hover:bg-[#2A2927] ${
-        isError ? 'border-red-900/50' : 'border-[#3A3835]'
+      className={`w-full my-1.5 overflow-hidden rounded-[12px] border bg-surface-2/80 transition-colors hover:bg-surface-2 ${
+        isError ? 'border-danger/50' : 'border-border'
       }`}
     >
       {/* Collapsed One-line Row */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-xs transition-colors min-h-[40px] select-none cursor-pointer"
+        className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-xs transition-colors min-h-[44px] select-none cursor-pointer"
         aria-expanded={isExpanded}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {/* Status Indicator: orange when running, grey check when done, red alert on error */}
+          {/* Status Indicator */}
           <div className="flex h-4 w-4 shrink-0 items-center justify-center">
             {isRunning ? (
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#D97757] opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#D97757]" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-text opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-text" />
               </span>
             ) : isDone ? (
-              <Check className="h-3.5 w-3.5 text-[#A8A59E]" strokeWidth={2.5} />
+              <Check className="h-3.5 w-3.5 text-success" strokeWidth={2.5} />
             ) : isError ? (
-              <AlertCircle className="h-3.5 w-3.5 text-red-400" strokeWidth={2.2} />
+              <AlertCircle className="h-3.5 w-3.5 text-danger" strokeWidth={2.2} />
             ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-[#3A3835]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-border-strong" />
             )}
           </div>
 
@@ -59,12 +59,12 @@ const TaskRowItemInner: React.FC<TaskRowItemProps> = ({ task }) => {
           <span
             className={`truncate ${
               isError
-                ? 'text-red-300'
+                ? 'text-danger'
                 : isRunning
-                ? 'text-[#FAF9F5] font-medium'
+                ? 'text-text font-medium'
                 : isDone
-                ? 'text-[#FAF9F5]'
-                : 'text-[#A8A59E]'
+                ? 'text-text'
+                : 'text-muted'
             }`}
           >
             {task.label}
@@ -74,23 +74,23 @@ const TaskRowItemInner: React.FC<TaskRowItemProps> = ({ task }) => {
         {/* Right Arrow / Detail Pill */}
         <div className="flex items-center gap-2 shrink-0 ml-2">
           {task.detailTitle && (
-            <span className="hidden sm:inline-block font-mono text-[11px] text-[#A8A59E]/80">
+            <span className="hidden sm:inline-block font-mono text-[11px] text-muted">
               {task.detailTitle}
             </span>
           )}
           <ChevronRight
-            className={`h-3.5 w-3.5 text-[#A8A59E] transition-transform duration-200 ${
-              isExpanded ? 'rotate-90 text-[#FAF9F5]' : ''
+            className={`h-3.5 w-3.5 text-muted transition-transform duration-200 ${
+              isExpanded ? 'rotate-90 text-text' : ''
             }`}
           />
         </div>
       </button>
 
-      {/* Thin orange progress bar for running task */}
+      {/* Thin accent progress bar for running task */}
       {isRunning && (
-        <div className="h-[2px] w-full bg-[#3A3835] overflow-hidden">
+        <div className="h-[2px] w-full bg-border overflow-hidden">
           <div
-            className="h-full bg-[#D97757] transition-all duration-300"
+            className="h-full bg-accent-text transition-all duration-300"
             style={{ width: `${task.progress ?? 65}%` }}
           />
         </div>
@@ -98,20 +98,20 @@ const TaskRowItemInner: React.FC<TaskRowItemProps> = ({ task }) => {
 
       {/* Expanded Monospace Detail Area */}
       {isExpanded && (
-        <div className="border-t border-[#3A3835] bg-[#1F1E1D] p-3 text-xs">
+        <div className="border-t border-border bg-term-bg p-3 text-xs">
           {(task.detailTitle || task.codeSnippet) && (
-            <div className="mb-2 flex items-center justify-between text-[11px] text-[#A8A59E]">
+            <div className="mb-2 flex items-center justify-between text-[11px] text-muted">
               <span className="font-mono">{task.detailTitle || (isError ? 'error.log' : 'details')}</span>
               {task.codeSnippet && (
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="flex items-center gap-1 hover:text-[#FAF9F5] transition-colors py-0.5 px-1.5 rounded cursor-pointer"
+                  className="flex items-center gap-1 hover:text-text transition-colors py-0.5 px-1.5 rounded cursor-pointer"
                   title="Copy"
                 >
                   {copied ? (
                     <>
-                      <CheckCheck className="h-3 w-3 text-[#A8A59E]" />
+                      <CheckCheck className="h-3 w-3 text-success" />
                       <span>Copied</span>
                     </>
                   ) : (
@@ -125,8 +125,8 @@ const TaskRowItemInner: React.FC<TaskRowItemProps> = ({ task }) => {
             </div>
           )}
           <pre
-            className={`font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words p-2 bg-[#2A2927]/40 rounded-[8px] border border-[#3A3835]/50 ${
-              isError ? 'text-red-300' : 'text-[#FAF9F5]/90'
+            className={`font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words p-2.5 bg-surface-1 rounded-[8px] border border-border/60 ${
+              isError ? 'text-danger' : 'text-term-text'
             }`}
           >
             <code>

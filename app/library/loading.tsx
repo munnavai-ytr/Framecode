@@ -1,28 +1,28 @@
 export default function LibraryLoading() {
   return (
-    <div className="min-h-screen bg-[#1F1E1D] text-[#FAF9F5] flex flex-col">
-      <header className="border-b border-[#3A3835] bg-[#2A2927] px-4 py-4 sm:px-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <div className="min-h-screen bg-bg text-text flex flex-col">
+      <header className="sticky top-0 z-20 h-16 border-b border-border bg-surface-1/90 px-4 sm:px-8 flex items-center">
+        <div className="max-w-[1400px] mx-auto w-full flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 rounded-lg bg-[#1F1E1D] border border-[#3A3835] animate-pulse" />
-            <div className="w-24 h-6 rounded bg-[#3A3835]/60 animate-pulse" />
+            <div className="w-9 h-9 rounded-lg bg-surface-2 border border-border animate-pulse" />
+            <div className="w-24 h-6 rounded bg-surface-2 animate-pulse" />
           </div>
-          <div className="w-24 h-8 rounded-xl bg-[#3A3835]/60 animate-pulse" />
+          <div className="w-24 h-9 rounded-xl bg-surface-2 animate-pulse" />
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 space-y-6">
-        <div className="p-4 bg-[#2A2927] border border-[#3A3835] rounded-xl h-20 animate-pulse" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, idx) => (
+      <main className="flex-1 max-w-[1400px] w-full mx-auto p-4 sm:p-8 space-y-6">
+        <div className="p-4 bg-surface-2 border border-border rounded-[16px] h-20 animate-pulse" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 min-[1440px]:grid-cols-5 gap-4">
+          {Array.from({ length: 10 }).map((_, idx) => (
             <div
               key={idx}
-              className="bg-[#2A2927] border border-[#3A3835] rounded-xl overflow-hidden animate-pulse"
+              className="bg-surface-2 border border-border rounded-[16px] overflow-hidden animate-pulse"
             >
-              <div className="w-full aspect-video bg-[#1F1E1D]" />
+              <div className="w-full aspect-video bg-surface-1" />
               <div className="p-3 space-y-2">
-                <div className="h-3.5 w-3/4 rounded bg-[#3A3835]/60" />
-                <div className="h-3 w-1/2 rounded bg-[#3A3835]/40" />
+                <div className="h-3.5 w-3/4 rounded bg-surface-3" />
+                <div className="h-3 w-1/2 rounded bg-surface-3/60" />
               </div>
             </div>
           ))}

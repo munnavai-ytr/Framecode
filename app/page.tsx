@@ -7,7 +7,6 @@ import { ChatArea } from '@/components/ChatArea';
 import { RightPanel } from '@/components/RightPanel';
 import { MobileHeader } from '@/components/MobileHeader';
 import { MobileTerminalSheet } from '@/components/MobileTerminalSheet';
-import { ModelPicker } from '@/components/ModelPicker';
 import {
   ChatSession,
   ChatMessage,
@@ -124,8 +123,6 @@ export default function FramecodePage() {
 
   const [pastChats, setPastChats] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-
-  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
 
   // UI state
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -286,9 +283,27 @@ export default function FramecodePage() {
   const handleSelectModel = useCallback((newSelection: ModelSelection) => {
     setSelection(newSelection);
     try {
-      localStorage.setItem(LOCAL_STORAGE_SELECTION_KEY, JSON.stringify(newSelection));
+      const serialized = JSON.stringify(newSelection);
+      localStorage.setItem(LOCAL_STORAGE_SELECTION_KEY, serialized);
+      localStorage.setItem(`fc_last_model_${newSelection.provider}`, serialized);
     } catch (e) {
       console.warn('Could not save model selection:', e);
+    }
+  }, []);
+
+  const handleSelectImage = useCallback((newImageSelection: ImageSelection | null) => {
+    setImageSelection(newImageSelection);
+    try {
+      if (newImageSelection) {
+        localStorage.setItem(
+          LOCAL_STORAGE_IMAGE_SELECTION_KEY,
+          JSON.stringify(newImageSelection)
+        );
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_IMAGE_SELECTION_KEY);
+      }
+    } catch (e) {
+      console.warn('Could not save image model selection:', e);
     }
   }, []);
 
@@ -2064,14 +2079,6 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
     guardedNavigate('/settings');
   }, [guardedNavigate]);
 
-  const handleOpenModelPicker = useCallback(() => {
-    setIsModelPickerOpen(true);
-  }, []);
-
-  const handleCloseModelPicker = useCallback(() => {
-    setIsModelPickerOpen(false);
-  }, []);
-
   const handleOpenSidebarMobile = useCallback(() => {
     setIsSidebarOpenMobile(true);
   }, []);
@@ -2089,7 +2096,7 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
   }, []);
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-[#1F1E1D] text-[#FAF9F5] overflow-hidden">
+    <div className="flex h-[100dvh] w-full flex-col bg-bg text-text overflow-hidden">
       {/* Mobile / Tablet Header */}
       <MobileHeader
         onOpenSidebar={handleOpenSidebarMobile}
@@ -2121,8 +2128,10 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
             onRenderAndDownload={handleRenderAndDownload}
             isRenderingMp4={isRenderingMp4}
             selection={selection}
+            imageSelection={imageSelection}
             selectionLoaded={selectionLoaded}
-            onOpenModelPicker={handleOpenModelPicker}
+            onSelectModel={handleSelectModel}
+            onSelectImage={handleSelectImage}
             onOpenSettings={handleOpenSettings}
             onNavigate={guardedNavigate}
           />
@@ -2138,15 +2147,6 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
         />
       </div>
 
-      {/* Model Picker Popover / Sheet */}
-      <ModelPicker
-        isOpen={isModelPickerOpen}
-        onClose={handleCloseModelPicker}
-        selection={selection}
-        onSelect={handleSelectModel}
-        onOpenSettings={handleOpenSettings}
-      />
-
       {/* Mobile Terminal Bottom Sheet */}
       <MobileTerminalSheet
         isOpen={isTerminalSheetOpenMobile}
@@ -2157,26 +2157,26 @@ ${s.stockQuery ? `- Stock Search Query: "${s.stockQuery}"` : ''}`
 
       {/* Guarded Navigation Confirmation Modal */}
       {pendingNavHref && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#2A2927] border border-[#3A3835] rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-semibold text-[#FAF9F5]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/80 backdrop-blur-xs">
+          <div className="bg-surface-2 border border-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-semibold text-text">
               A task is still running. Leave and stop it?
             </h3>
-            <p className="text-xs text-[#A8A59E]">
+            <p className="text-xs text-muted">
               Leaving now will cancel the current generation or render.
             </p>
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
                 onClick={() => setPendingNavHref(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-[#3A3835] bg-[#1F1E1D] text-xs font-medium text-[#FAF9F5] hover:bg-[#33322F] transition cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-border bg-surface-1 text-xs font-medium text-text hover:bg-surface-3 transition cursor-pointer"
               >
                 Stay
               </button>
               <button
                 type="button"
                 onClick={handleConfirmLeaveAndStop}
-                className="px-3.5 py-1.5 rounded-lg bg-[#D97757] hover:bg-[#C5684A] text-xs font-medium text-white transition cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg bg-accent hover:bg-accent-hover active:bg-accent-pressed text-xs font-medium text-white transition cursor-pointer"
               >
                 Leave and stop
               </button>

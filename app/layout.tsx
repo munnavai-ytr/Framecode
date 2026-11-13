@@ -20,13 +20,14 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1F1E1D',
+  themeColor: '#0E1015',
+  colorScheme: 'dark',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body suppressHydrationWarning className="bg-[#1F1E1D] text-[#FAF9F5] antialiased">
+      <body suppressHydrationWarning className="bg-bg text-text antialiased">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

@@ -14,7 +14,6 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
   const containerRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Auto-scroll to the bottom whenever lines change
   useEffect(() => {
     if (terminalEndRef.current) {
       terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -29,16 +28,16 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
   };
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-[#3A3835] bg-[#1F1E1D]">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-[12px] border border-border bg-term-bg">
       {/* Top Bar / Title */}
-      <div className="flex items-center justify-between border-b border-[#3A3835] bg-[#2A2927] px-3.5 py-2.5">
+      <div className="flex items-center justify-between border-b border-border bg-surface-2 px-3.5 py-2.5">
         <div className="flex items-center gap-2">
-          <TerminalIcon className="h-3.5 w-3.5 text-[#A8A59E]" />
-          <span className="text-xs font-medium text-[#FAF9F5]">AI terminal - view only</span>
+          <TerminalIcon className="h-3.5 w-3.5 text-muted" />
+          <span className="text-xs font-medium text-text">AI terminal - view only</span>
           {isStreaming && (
             <span className="flex h-2 w-2 relative">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#D97757] opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#D97757]" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-text opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-text" />
             </span>
           )}
         </div>
@@ -46,12 +45,12 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
         <button
           type="button"
           onClick={handleCopyLogs}
-          className="flex items-center gap-1 text-[11px] text-[#A8A59E] hover:text-[#FAF9F5] transition-colors py-0.5 px-2 rounded hover:bg-[#1F1E1D]"
+          className="flex items-center gap-1 text-[11px] text-muted hover:text-text transition-colors py-1 px-2 rounded hover:bg-surface-3 cursor-pointer"
           title="Copy terminal logs"
         >
           {copied ? (
             <>
-              <CheckCheck className="h-3 w-3 text-[#A8A59E]" />
+              <CheckCheck className="h-3 w-3 text-success" />
               <span>Copied</span>
             </>
           ) : (
@@ -63,10 +62,10 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
         </button>
       </div>
 
-      {/* Terminal Monospace Content - Read-only, No input field */}
+      {/* Terminal Monospace Content - Read-only */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-3.5 font-terminal text-[11px] leading-relaxed text-[#A8A59E] select-text"
+        className="flex-1 overflow-y-auto p-3.5 font-terminal text-[11px] leading-relaxed text-term-text select-text"
       >
         <div className="space-y-1">
           {lines.map((line) => {
@@ -77,19 +76,19 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
             return (
               <div key={line.id} className="flex items-start gap-2 break-all">
                 {line.timestamp && (
-                  <span className="shrink-0 text-[#A8A59E]/50 select-none">
+                  <span className="shrink-0 text-faint select-none">
                     {line.timestamp}
                   </span>
                 )}
                 <span
                   className={
                     isCommand
-                      ? 'text-[#FAF9F5] font-semibold'
+                      ? 'text-accent-text font-semibold'
                       : isSuccess
-                      ? 'text-[#FAF9F5]'
+                      ? 'text-success'
                       : isHighlight
-                      ? 'text-[#D97757]'
-                      : 'text-[#A8A59E]'
+                      ? 'text-accent-text'
+                      : 'text-term-text'
                   }
                 >
                   {line.text}
@@ -98,10 +97,9 @@ const TerminalInner: React.FC<TerminalProps> = ({ lines, isStreaming = false }) 
             );
           })}
 
-          {/* Cursor pulse if actively streaming logs */}
           {isStreaming && (
             <div className="flex items-center gap-2 pt-1">
-              <span className="text-[#D97757] animate-pulse">_</span>
+              <span className="text-accent-text animate-pulse">_</span>
             </div>
           )}
 

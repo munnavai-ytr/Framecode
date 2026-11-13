@@ -1,60 +1,77 @@
-import React from 'react';
+'use client';
+
+import React, { useMemo } from 'react';
+import { Claude, Gemini, OpenRouter, ModelIcon, modelMappings } from '@lobehub/icons';
 import { ProviderId } from '@/types/framecode';
 
 interface ProviderLogoProps {
   provider: ProviderId;
+  size?: number;
   className?: string;
 }
 
-export function ProviderLogo({ provider, className = 'w-4 h-4' }: ProviderLogoProps) {
+export function ProviderLogo({ provider, size = 16, className = '' }: ProviderLogoProps) {
   if (provider === 'claude') {
-    return (
-      <svg
-        className={className}
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        style={{ color: '#D97757' }}
-      >
-        <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-      </svg>
-    );
+    return <Claude.Color size={size} className={`shrink-0 ${className}`} />;
   }
 
   if (provider === 'gemini') {
-    return (
-      <svg
-        className={className}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ color: '#60A5FA' }}
-      >
-        <path d="M12 3v18M3 12h18M5.637 5.637l12.728 12.728M5.637 18.364L18.365 5.636" />
-      </svg>
-    );
+    return <Gemini.Color size={size} className={`shrink-0 ${className}`} />;
   }
 
-  // openrouter
+  return <OpenRouter size={size} className={`shrink-0 text-text ${className}`} />;
+}
+
+interface ModelLogoProps {
+  modelId: string;
+  provider?: ProviderId;
+  size?: number;
+  className?: string;
+}
+
+function findMatchedModelInput(modelId: string): string | null {
+  const normalized = modelId.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const afterSlash = normalized.includes('/') ? normalized.split('/').slice(1).join('/') : '';
+  const vendor = normalized.includes('/') ? normalized.split('/')[0] : '';
+
+  const candidates = [normalized, afterSlash, vendor].filter(Boolean);
+  for (const candidate of candidates) {
+    for (const item of modelMappings) {
+      if (item.keywords.some((kw) => new RegExp(kw, 'i').test(candidate))) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function ModelLogo({
+  modelId,
+  provider,
+  size = 32,
+  className = '',
+}: ModelLogoProps) {
+  const matchedInput = useMemo(() => findMatchedModelInput(modelId), [modelId]);
+
+  const fallbackLetter = useMemo(() => {
+    const clean = modelId.includes('/') ? modelId.split('/').pop() || modelId : modelId;
+    const ch = clean.trim().charAt(0) || provider?.charAt(0) || 'M';
+    return ch.toUpperCase();
+  }, [modelId, provider]);
+
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ color: '#FAF9F5' }}
+    <div
+      style={{ width: size, height: size }}
+      className={`flex shrink-0 items-center justify-center rounded-full border border-border bg-surface-3 text-text overflow-hidden ${className}`}
     >
-      <circle cx="6" cy="6" r="3" />
-      <circle cx="18" cy="6" r="3" />
-      <circle cx="12" cy="18" r="3" />
-      <line x1="8.5" y1="7.5" x2="15.5" y2="7.5" />
-      <line x1="7.5" y1="8.5" x2="10.5" y2="15.5" />
-      <line x1="16.5" y1="8.5" x2="13.5" y2="15.5" />
-    </svg>
+      {matchedInput ? (
+        <ModelIcon model={matchedInput} size={Math.round(size * 0.62)} type="color" />
+      ) : (
+        <span className="text-xs font-semibold text-text select-none">{fallbackLetter}</span>
+      )}
+    </div>
   );
 }
